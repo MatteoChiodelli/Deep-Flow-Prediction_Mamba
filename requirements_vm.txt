@@ -9,7 +9,7 @@ mamba-ssm
 einops
 timm
 triton
-numpy
+numpy<2
 scipy
 matplotlib
 tensorboar

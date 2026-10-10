@@ -4,7 +4,7 @@ torchvision==0.16.2+cpu
 torchaudio==2.1.2+cpu
 einops
 timm
-numpy
+numpy<2
 scipy
 matplotlib
 tensorboard
