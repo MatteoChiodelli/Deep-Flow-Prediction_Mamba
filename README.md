@@ -55,7 +55,7 @@ This document outlines the Research Questions (RQ), the configuration matrix, an
   * Adam optimizer with original schedule and learning rate ($0.0006$).
   * Identical maximum number of epochs with best model saving based on validation loss (Early Stopping checkpoint).
 * **Parametric Constraint (Iso-capacity):**
-  * Trainable parameters for each variant must remain comparable to the baseline ($\sim 150\text{k} - 250\text{k}$).
+  * Trainable parameters for each variant must remain comparable to the baseline 
 * **Multi-Seed Validation:**
   * 3 fixed seeds (`42`, `1955`, `2003`) for the final configurations, reporting metrics in $\text{Mean} \pm \text{Std}$ format.
 * **Target Metrics:**
