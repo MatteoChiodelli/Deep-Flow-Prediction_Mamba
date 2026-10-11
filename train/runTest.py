@@ -9,6 +9,10 @@
 
 import os,sys,random,math
 import numpy as np
+########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+import csv
+import matplotlib.pyplot as plt
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -19,12 +23,19 @@ from DfpNet import TurbNetG, weights_init
 import utils
 from utils import log
 
-suffix = "" # customize loading & output if necessary
-prefix = ""
-if len(sys.argv)>1:
-    prefix = sys.argv[1]
-    print("Output prefix: {}".format(prefix))
+########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
+run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
+seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
 
+if seed_arg is not None:
+    seed = seed_arg
+else:
+    seed = random.randint(0, 2**32 - 1)
+
+prefix = f"{model_type}_{run_name}_s{seed}_"
+suffix = ""
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 expo = 5
 dataset = TurbDataset(None, mode=TurbDataset.TEST, dataDirTest="../data/test/")
 testLoader = DataLoader(dataset, batch_size=1, shuffle=False)
@@ -47,6 +58,38 @@ netG = TurbNetG(channelExponent=expo)
 lf = "./" + prefix + "testout{}.txt".format(suffix) 
 utils.makeDirs(["results_test"])
 
+#################################################################################
+is_small = True  #HERE
+suffix_str = "_small" if is_small else ""
+
+metrics_dir = os.path.join("metrics", f"{model_type}_{run_name}_s{seed}{suffix_str}")
+os.makedirs(metrics_dir, exist_ok=True)
+
+metrics_file = os.path.join(metrics_dir, "metrics_test.csv")
+plot_path    = os.path.join(metrics_dir, "error_plot_test.png")
+################################################################################
+
+if not os.path.isfile(metrics_file):
+    with open(metrics_file, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "model",
+            "sample_id",
+            "l1_loss",
+            "l1_loss_denormalized",
+            "rel_error_pressure_pct",
+            "rel_error_velocity_pct",
+            "rel_error_aggregate_pct",
+            "accuracy_pressure_pct",
+            "accuracy_velocity_pct",
+            "accuracy_aggregate_pct"
+        ])
+
+plot_model_names = []
+plot_err_p = []
+plot_err_v = []
+plot_err_agg = []
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 # loop over different trained models
 avgLoss = 0.
 losses = []
@@ -82,21 +125,28 @@ for si in range(25):
         inputs.data.resize_as_(inputs_cpu).copy_(inputs_cpu)
         targets.data.resize_as_(targets_cpu).copy_(targets_cpu)
 
-        outputs = netG(inputs)
+########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+        with torch.no_grad():
+            outputs = netG(inputs)
+            lossL1 = criterionL1(outputs, targets)
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////        
         outputs_cpu = outputs.data.cpu().numpy()[0]
         targets_cpu = targets_cpu.cpu().numpy()[0]
 
-        lossL1 = criterionL1(outputs, targets)
+########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
         L1val_accum += lossL1.item()
 
-        # precentage loss by ratio of means which is same as the ratio of the sum
-        lossPer_p = np.sum(np.abs(outputs_cpu[0] - targets_cpu[0]))/np.sum(np.abs(targets_cpu[0]))
-        lossPer_v = ( np.sum(np.abs(outputs_cpu[1] - targets_cpu[1])) + np.sum(np.abs(outputs_cpu[2] - targets_cpu[2])) ) / ( np.sum(np.abs(targets_cpu[1])) + np.sum(np.abs(targets_cpu[2])) )
-        lossPer = np.sum(np.abs(outputs_cpu - targets_cpu))/np.sum(np.abs(targets_cpu))
+        eps = 1e-8
+        lossPer_p = np.sum(np.abs(outputs_cpu[0] - targets_cpu[0])) / max(np.sum(np.abs(targets_cpu[0])), eps)
+        lossPer_v = (np.sum(np.abs(outputs_cpu[1] - targets_cpu[1])) + np.sum(np.abs(outputs_cpu[2] - targets_cpu[2]))) / max(
+            np.sum(np.abs(targets_cpu[1])) + np.sum(np.abs(targets_cpu[2])), eps
+        )
+        lossPer = np.sum(np.abs(outputs_cpu - targets_cpu)) / max(np.sum(np.abs(targets_cpu)), eps)
+
         lossPer_p_accum += lossPer_p.item()
         lossPer_v_accum += lossPer_v.item()
         lossPer_accum += lossPer.item()
-
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         log(lf, "Test sample %d"% i )
         log(lf, "    pressure:  abs. difference, ratio: %f , %f " % (np.sum(np.abs(outputs_cpu[0] - targets_cpu[0])), lossPer_p.item()) )
         log(lf, "    velocity:  abs. difference, ratio: %f , %f " % (np.sum(np.abs(outputs_cpu[1] - targets_cpu[1])) + np.sum(np.abs(outputs_cpu[2] - targets_cpu[2])) , lossPer_v.item() ) )
@@ -123,27 +173,92 @@ for si in range(25):
         lossL1_dn = criterionL1(outputs_dn, targets_dn)
         L1val_dn_accum += lossL1_dn.item()
 
-        # write output image, note - this is currently overwritten for multiple models
-        os.chdir("./results_test/")
-        utils.imageOut("%04d"%(i), outputs_cpu, targets_cpu, normalize=False, saveMontage=True) # write normalized with error
-        os.chdir("../")
-
+########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+        with open(metrics_file, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                os.path.basename(modelFn),
+                i,
+                lossL1.item(),
+                lossL1_dn.item(),
+                lossPer_p.item() * 100.0,
+                lossPer_v.item() * 100.0,
+                lossPer.item() * 100.0,
+                max(0.0, (1.0 - lossPer_p.item()) * 100.0),
+                max(0.0, (1.0 - lossPer_v.item()) * 100.0),
+                max(0.0, (1.0 - lossPer.item()) * 100.0)
+            ])
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        if i == 0:
+            results_dir = os.path.join(metrics_dir, "results")
+            os.makedirs(results_dir, exist_ok=True)
+            
+            img_path = os.path.join(results_dir, "final_test_sample")
+            utils.imageOut(img_path, outputs_cpu, targets_cpu, normalize=False, saveMontage=True)
+# --------------------------------------------------------------
     log(lf, "\n") 
     L1val_accum     /= len(testLoader)
     lossPer_p_accum /= len(testLoader)
     lossPer_v_accum /= len(testLoader)
     lossPer_accum   /= len(testLoader)
     L1val_dn_accum  /= len(testLoader)
+    
     log(lf, "Loss percentage (p, v, combined): %f %%    %f %%    %f %% " % (lossPer_p_accum*100, lossPer_v_accum*100, lossPer_accum*100 ) )
     log(lf, "L1 error: %f" % (L1val_accum) )
     log(lf, "Denormalized error: %f" % (L1val_dn_accum) )
     log(lf, "\n") 
 
+########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+    with open(metrics_file, mode="a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            os.path.basename(modelFn) + "_AVERAGE",
+            "ALL",
+            L1val_accum,
+            L1val_dn_accum,
+            lossPer_p_accum * 100.0,
+            lossPer_v_accum * 100.0,
+            lossPer_accum * 100.0,
+            max(0.0, (1.0 - lossPer_p_accum) * 100.0),
+            max(0.0, (1.0 - lossPer_v_accum) * 100.0),
+            max(0.0, (1.0 - lossPer_accum) * 100.0)
+        ])
+
+    plot_model_names.append(os.path.basename(modelFn))
+    plot_err_p.append(lossPer_p_accum * 100.0)
+    plot_err_v.append(lossPer_v_accum * 100.0)
+    plot_err_agg.append(lossPer_accum * 100.0)
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     avgLoss += lossPer_accum
     losses.append(lossPer_accum)
 
 if len(losses)>1:
-	avgLoss /= len(losses)
-	lossStdErr = np.std(losses) / math.sqrt(len(losses))
-	log(lf, "Averaged relative error and std dev across models:   %f , %f " % (avgLoss,lossStdErr) )
+    avgLoss /= len(losses)
+    lossStdErr = np.std(losses) / math.sqrt(len(losses))
+    log(lf, "Averaged relative error and std dev across models:   %f , %f " % (avgLoss,lossStdErr) )
 
+########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+if len(plot_model_names) > 0:
+    x = np.arange(len(plot_model_names))
+    width = 0.25
+
+    plt.figure(figsize=(8 + len(plot_model_names), 5))
+    plt.bar(x - width, plot_err_p, width, label="Rel. Error Pressure ($p$) %", color="#d62728")
+    plt.bar(x, plot_err_v, width, label="Rel. Error Velocity ($v$) %", color="#1f77b4")
+    plt.bar(x + width, plot_err_agg, width, label="Aggregate Rel. Error %", color="#2ca02c")
+
+    plt.ylabel("Relative Error (%)", fontsize=11)
+    plt.title(f"{model_type.capitalize()} - Test Relative Error by Field", fontsize=13)
+    plt.xticks(x, plot_model_names, rotation=15 if len(plot_model_names) > 3 else 0)
+    plt.grid(axis="y", linestyle=":", alpha=0.6)
+    plt.legend(fontsize=10)
+    plt.tight_layout()
+
+    plot_path = os.path.join(metrics_dir, f"test_errors_{model_type}_{run_name}.png")
+    plt.savefig(plot_path, dpi=300)
+    plt.close()
+
+    print(f"\nTest completato.")
+    print(f"Metriche salvate in: {metrics_file}")
+    print(f"Grafico salvato in:  {plot_path}")
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -6,9 +6,40 @@
 #
 ################
 
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import warnings
+
+###############
+# 
+# Modifications for introduction of self attention / mamba blocks
+# Adaptive based on local/gpu requirements.txt
+
+# Checking Mamba standard (1D) GPU
+try:
+    from mamba_ssm import Mamba
+    HAS_MAMBA = True
+except ImportError:
+    HAS_MAMBA = False
+
+# Checking V-Mamba (Selective Scan 2D) GPU
+try:
+    # Importive selective_scan from MambaV repo for 2D scanning
+    import selective_scan
+    from vmamba import VSSBlock  # Decommentare se usi direttamente il loro blocco
+    HAS_VMAMBA = True
+except ImportError:
+    HAS_VMAMBA = False
+
+if torch.cuda.is_available():
+    print(f"[INFO] CUDA avaible. Mamba-1D: {HAS_MAMBA} | V-Mamba (SS2D): {HAS_VMAMBA}")
+else:
+    print("[WARNING] CUDA not avaible. Mamba blocks forced on CPU.")
+#################
+
+
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -113,3 +144,18 @@ class TurbNetD(nn.Module):
         h = F.sigmoid(h) 
         return h
 
+class TurbNetAttention(nn.Module):
+    def __init__(self):
+        self.L1=None
+        
+    def forward(self,x):
+        return None
+
+
+class TubrNetMamba(nn.Module):
+    def __init__(self):
+        self.L1=None
+
+    def forward(self,x):
+        return None
+    

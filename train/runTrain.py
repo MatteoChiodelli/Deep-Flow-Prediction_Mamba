@@ -7,21 +7,27 @@
 ################
 
 import os, sys, random
+################################################################################
+import csv
+import matplotlib.pyplot as plt
+#///////////////////////////////////////////////////////////////////////////////
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 
-from DfpNet import TurbNetG, weights_init
+################################################################################
+from DfpNet import TurbNetG, TurbNetAttention, TubrNetMamba, weights_init
+#///////////////////////////////////////////////////////////////////////////////
 import dataset
 import utils
 
 ######## Settings ########
 
 # number of training iterations
-iterations = 10000
+iterations = 90000
 # batch size
 batch_size = 10
 # learning rate, generator
@@ -32,34 +38,36 @@ decayLr = True
 expo = 5
 # data set config
 prop=None # by default, use all from "../data/train"
-#prop=[1000,0.75,0,0.25] # mix data from multiple directories
 # save txt files with per epoch loss?
 saveL1 = False
 
-##########################
+################################################################################
+model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
+run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
+seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
 
-prefix = ""
-if len(sys.argv)>1:
-    prefix = sys.argv[1]
-    print("Output prefix: {}".format(prefix))
+if seed_arg is not None:
+    seed = seed_arg
+else:
+    seed = random.randint(0, 2**32 - 1)
 
-dropout    = 0.      # note, the original runs from https://arxiv.org/abs/1810.08217 used slight dropout, but the effect is minimal; conv layers "shouldn't need" dropout, hence set to 0 here.
-doLoad     = ""      # optional, path to pre-trained model
+prefix = f"{model_type}_{run_name}_s{seed}_"
+dropout = 0.0
+doLoad  = ""
 
+print("Model Type: {}".format(model_type))
 print("LR: {}".format(lrG))
 print("LR decay: {}".format(decayLr))
 print("Iterations: {}".format(iterations))
 print("Dropout: {}".format(dropout))
-
+#///////////////////////////////////////////////////////////////////////////////
 ##########################
 
-seed = random.randint(0, 2**32 - 1)
 print("Random seed: {}".format(seed))
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
-#torch.backends.cudnn.deterministic=True # warning, slower
 
 # create pytorch data object with dfp dataset
 data = dataset.TurbDataset(prop, shuffle=1)
@@ -71,7 +79,20 @@ print("Validation batches: {}".format(len(valiLoader)))
 
 # setup training
 epochs = int(iterations/len(trainLoader) + 0.5)
-netG = TurbNetG(channelExponent=expo, dropout=dropout)
+
+################################################################################
+if epochs < 1:
+    epochs = 1
+
+if model_type == "baseline":
+    netG = TurbNetG(channelExponent=expo, dropout=dropout)
+# elif model_type == "attention":
+#     netG = TurbNetAttention(channelExponent=expo, dropout=dropout)
+# elif model_type == "mamba":
+#     netG = TubrNetMamba(channelExponent=expo, dropout=dropout)
+else:
+    raise ValueError(f"Unknown model: {model_type}")
+#///////////////////////////////////////////////////////////////////////////////
 print(netG) # print full net
 model_parameters = filter(lambda p: p.requires_grad, netG.parameters())
 params = sum([np.prod(p.size()) for p in model_parameters])
@@ -93,6 +114,32 @@ inputs  = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
 targets = targets.cuda()
 inputs  = inputs.cuda()
 
+################################################################################
+is_small = True  #HERE
+suffix_str = "_small" if is_small else ""
+
+metrics_dir = os.path.join("metrics", f"{model_type}_{run_name}_s{seed}{suffix_str}")
+os.makedirs(metrics_dir, exist_ok=True)
+
+metrics_file = os.path.join(metrics_dir, "metrics_train.csv")
+plot_path = os.path.join(metrics_dir, "loss_curve_train.png")
+################################################################################
+
+with open(metrics_file, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        "epoch", 
+        "train_loss", 
+        "val_loss", 
+        "train_rel_error", 
+        "val_rel_error", 
+        "train_accuracy_pct", 
+        "val_accuracy_pct"
+    ])
+
+history_train_loss = []
+history_val_loss = []
+#///////////////////////////////////////////////////////////////////////////////
 ##########################
 
 for epoch in range(epochs):
@@ -100,6 +147,11 @@ for epoch in range(epochs):
 
     netG.train()
     L1_accum = 0.0
+    
+################################################################################
+    train_abs_diff_sum = 0.0
+    train_target_sum = 0.0
+#///////////////////////////////////////////////////////////////////////////////
     for i, traindata in enumerate(trainLoader, 0):
         inputs_cpu, targets_cpu = traindata
         targets_cpu, inputs_cpu = targets_cpu.float().cuda(), inputs_cpu.float().cuda()
@@ -124,44 +176,100 @@ for epoch in range(epochs):
         lossL1viz = lossL1.item()
         L1_accum += lossL1viz
 
+################################################################################
+        with torch.no_grad():
+            train_abs_diff_sum += torch.sum(torch.abs(gen_out - targets)).item()
+            train_target_sum += torch.sum(torch.abs(targets)).item()
+#///////////////////////////////////////////////////////////////////////////////
         if i==len(trainLoader)-1:
             logline = "Epoch: {}, batch-idx: {}, L1: {}\n".format(epoch, i, lossL1viz)
             print(logline)
 
-
+################################################################################
+    epoch_train_loss = L1_accum / len(trainLoader)
+    train_rel_error = train_abs_diff_sum / max(train_target_sum, 1e-8)
+    train_acc_pct = max(0.0, (1.0 - train_rel_error) * 100.0)
+#///////////////////////////////////////////////////////////////////////////////
     # validation
     netG.eval()
     L1val_accum = 0.0
-    for i, validata in enumerate(valiLoader, 0):
-        inputs_cpu, targets_cpu = validata
-        targets_cpu, inputs_cpu = targets_cpu.float().cuda(), inputs_cpu.float().cuda()
-        inputs.data.resize_as_(inputs_cpu).copy_(inputs_cpu)
-        targets.data.resize_as_(targets_cpu).copy_(targets_cpu)
+    
+################################################################################
+    val_abs_diff_sum = 0.0
+    val_target_sum = 0.0
 
-        outputs = netG(inputs)
-        outputs_cpu = outputs.data.cpu().numpy()
+    with torch.no_grad():
+#///////////////////////////////////////////////////////////////////////////////        
+        for i, validata in enumerate(valiLoader, 0):
+            inputs_cpu, targets_cpu = validata
+            targets_cpu, inputs_cpu = targets_cpu.float().cuda(), inputs_cpu.float().cuda()
+            inputs.data.resize_as_(inputs_cpu).copy_(inputs_cpu)
+            targets.data.resize_as_(targets_cpu).copy_(targets_cpu)
 
-        lossL1 = criterionL1(outputs, targets)
-        L1val_accum += lossL1.item()
+            outputs = netG(inputs)
+            outputs_cpu = outputs.data.cpu().numpy()
 
-        if i==0:
-            input_ndarray = inputs_cpu.cpu().numpy()[0]
-            v_norm = ( np.max(np.abs(input_ndarray[0,:,:]))**2 + np.max(np.abs(input_ndarray[1,:,:]))**2 )**0.5
+            lossL1 = criterionL1(outputs, targets)
+            L1val_accum += lossL1.item()
+            
+################################################################################
+            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+            val_target_sum += torch.sum(torch.abs(targets)).item()
+#///////////////////////////////////////////////////////////////////////////////
 
-            outputs_denormalized = data.denormalize(outputs_cpu[0], v_norm)
-            targets_denormalized = data.denormalize(targets_cpu.cpu().numpy()[0], v_norm)
-            utils.makeDirs(["results_train"])
-            utils.imageOut("results_train/epoch{}_{}".format(epoch, i), outputs_denormalized, targets_denormalized, saveTargets=True)
+            if i == 0 and epoch == (epochs - 1):
+                input_ndarray = inputs_cpu.cpu().numpy()[0]
+                v_norm = ( np.max(np.abs(input_ndarray[0,:,:]))**2 + np.max(np.abs(input_ndarray[1,:,:]))**2 )**0.5
 
-    # data for graph plotting
-    L1_accum    /= len(trainLoader)
-    L1val_accum /= len(valiLoader)
-    if saveL1:
-        if epoch==0: 
-            utils.resetLog(prefix + "L1.txt"   )
-            utils.resetLog(prefix + "L1val.txt")
-        utils.log(prefix + "L1.txt"   , "{} ".format(L1_accum), False)
-        utils.log(prefix + "L1val.txt", "{} ".format(L1val_accum), False)
+                outputs_denormalized = data.denormalize(outputs_cpu[0], v_norm)
+                targets_denormalized = data.denormalize(targets_cpu.cpu().numpy()[0], v_norm)
+                
+                results_dir = os.path.join(metrics_dir, "results")
+                os.makedirs(results_dir, exist_ok=True)
+                
+                img_path = os.path.join(results_dir, "final_train_sample")
+                utils.imageOut(img_path, outputs_denormalized, targets_denormalized, saveTargets=True)
 
+################################################################################
+    epoch_val_loss = L1val_accum / len(valiLoader)
+    val_rel_error = val_abs_diff_sum / max(val_target_sum, 1e-8)
+    val_acc_pct = max(0.0, (1.0 - val_rel_error) * 100.0)
+
+    print(f"[Epoch {epoch+1:03d}/{epochs:03d}] Train Loss: {epoch_train_loss:.6f} (Acc: {train_acc_pct:.2f}%) | Val Loss: {epoch_val_loss:.6f} (Acc: {val_acc_pct:.2f}%)")
+
+    with open(metrics_file, mode="a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            epoch + 1, 
+            epoch_train_loss, 
+            epoch_val_loss, 
+            train_rel_error, 
+            val_rel_error, 
+            train_acc_pct, 
+            val_acc_pct
+        ])
+
+    history_train_loss.append(epoch_train_loss)
+    history_val_loss.append(epoch_val_loss)
+
+#///////////////////////////////////////////////////////////////////////////////
 torch.save(netG.state_dict(), prefix + "modelG" )
 
+################################################################################
+plt.figure(figsize=(9, 5))
+plt.plot(range(1, epochs + 1), history_train_loss, label="Train Loss (L1)", color="#1f77b4", linewidth=2)
+plt.plot(range(1, epochs + 1), history_val_loss, label="Validation Loss (L1)", color="#ff7f0e", linestyle="--", linewidth=2)
+plt.title(f"{model_type.capitalize()} - Training & Validation Loss", fontsize=13)
+plt.xlabel("Epochs", fontsize=11)
+plt.ylabel("L1 Loss", fontsize=11)
+plt.grid(True, linestyle=":", alpha=0.6)
+plt.legend(fontsize=11)
+plt.tight_layout()
+
+plt.savefig(plot_path, dpi=300)
+plt.close()
+
+print(f"\nTraining completed.")
+print(f"Metrics saved in: {metrics_file}")
+print(f"Plot saved in:  {plot_path}")
+#///////////////////////////////////////////////////////////////////////////////

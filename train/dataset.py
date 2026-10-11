@@ -190,8 +190,8 @@ def LoaderNormalizer(data, isTest = False, shuffle = 0, dataProp = None):
         data.targets[:,2,:,:] *= (1.0/data.max_targets_2)
 
     print("Data stats, input  mean %f, max  %f;   targets mean %f , max %f " % ( 
-      np.mean(np.abs(data.targets), keepdims=False), np.max(np.abs(data.targets), keepdims=False) , 
-      np.mean(np.abs(data.inputs), keepdims=False) , np.max(np.abs(data.inputs), keepdims=False) ) ) 
+    np.mean(np.abs(data.targets), keepdims=False), np.max(np.abs(data.targets), keepdims=False) , 
+    np.mean(np.abs(data.inputs), keepdims=False) , np.max(np.abs(data.inputs), keepdims=False) ) ) 
 
     return data
 
@@ -203,7 +203,7 @@ class TurbDataset(Dataset):
     TRAIN = 0
     TEST  = 2
 
-    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train/", dataDirTest="../data/test/", shuffle=0, normMode=0):
+    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train_small/", dataDirTest="../data/test/", shuffle=0, normMode=0): #HERE
         global makeDimLess, removePOffset
         """
         :param dataProp: for split&mix from multiple dirs, see LoaderNormalizer; None means off
@@ -228,6 +228,12 @@ class TurbDataset(Dataset):
         self.dataDirTest = dataDirTest # only for mode==self.TEST
 
         # load & normalize data
+        self.max_targets_0 = 1.0
+        self.max_targets_1 = 1.0
+        self.max_targets_2 = 1.0
+        self.max_inputs_0 = 1.0
+        self.max_inputs_1 = 1.0
+        self.max_inputs_2 = 1.0
         self = LoaderNormalizer(self, isTest=(mode==self.TEST), dataProp=dataProp, shuffle=shuffle)
 
         if not self.mode==self.TEST:
