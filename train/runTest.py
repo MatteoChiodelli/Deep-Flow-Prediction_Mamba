@@ -19,7 +19,8 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from dataset import TurbDataset
-from DfpNet import TurbNetG, weights_init
+from DfpNet import TurbNetG, weights_init,TurbNetMambaBot,TurbNetMambaSup,TurbNetAttention
+
 import utils
 from utils import log
 
@@ -54,7 +55,16 @@ outputs_dn = torch.FloatTensor(1, 3, 128, 128)
 outputs_dn = Variable(outputs_dn)
 outputs_dn = outputs_dn.cuda()
 
-netG = TurbNetG(channelExponent=expo)
+if model_type == "baseline":
+    netG = TurbNetG(channelExponent=expo)
+elif model_type == "attention":
+    netG = TurbNetAttention() 
+elif model_type == "mambaBot":
+    netG = TurbNetMambaBot(channelExponent=expo)
+elif model_type == "mambaSup":
+    netG = TurbNetMambaSup(channelExponent=expo)
+else:
+    raise ValueError(f"Unknown Model: {model_type}")
 lf = "./" + prefix + "testout{}.txt".format(suffix) 
 utils.makeDirs(["results_test"])
 
@@ -62,7 +72,7 @@ utils.makeDirs(["results_test"])
 is_small = True  #HERE
 suffix_str = "_small" if is_small else ""
 
-metrics_dir = os.path.join("metrics", f"{model_type}_{run_name}_s{seed}{suffix_str}")
+metrics_dir = os.path.join("metrics", model_type, f"{model_type}_{run_name}_s{seed}{suffix_str}")
 os.makedirs(metrics_dir, exist_ok=True)
 
 metrics_file = os.path.join(metrics_dir, "metrics_test.csv")

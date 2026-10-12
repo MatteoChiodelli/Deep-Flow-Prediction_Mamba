@@ -16,7 +16,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import torch.optim as optim
 
-from DfpNet import TurbNetG, TurbNetAttention, TubrNetMamba, weights_init
+from DfpNet import TurbNetG, TurbNetAttention, TurbNetMambaBot,TurbNetMambaSup, weights_init
 import dataset
 import utils
 
@@ -85,10 +85,12 @@ if epochs < 1:
 
 if model_type == "baseline":
     netG = TurbNetG(channelExponent=expo, dropout=dropout)
-# elif model_type == "attention":
-#     netG = TurbNetAttention(channelExponent=expo, dropout=dropout)
-# elif model_type == "mamba":
-#     netG = TubrNetMamba(channelExponent=expo, dropout=dropout)
+elif model_type == "attention":
+    netG = TurbNetAttention(channelExponent=expo, dropout=dropout)
+elif model_type == "mambaBot":
+    netG = TurbNetMambaBot(channelExponent=expo, dropout=dropout)
+elif model_type == "mambaSup":
+    netG = TurbNetMambaSup(channelExponent=expo, dropout=dropout)
 else:
     raise ValueError(f"Unknown Model: {model_type}")
 
@@ -108,7 +110,11 @@ optimizerG = optim.Adam(netG.parameters(), lr=lrG, betas=(0.5, 0.999), weight_de
 targets = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
 inputs  = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
 
+trainable_params = sum(p.numel() for p in netG.parameters() if p.requires_grad)
+print(f"Initialized {model_type} with {trainable_params:,} trainable params")
+
 ################################################################################
+
 is_small = True  #HERE
 suffix_str = "_small" if is_small else ""
 

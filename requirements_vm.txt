@@ -12,4 +12,5 @@ triton
 numpy<2
 scipy
 matplotlib
-tensorboar
+tensorboard
+pandas

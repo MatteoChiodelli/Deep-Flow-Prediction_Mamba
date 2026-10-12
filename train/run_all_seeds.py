@@ -1,11 +1,12 @@
 import subprocess
 import os
 import glob
+import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-MODEL = "baseline"        # 'baseline', 'attention', 'mamba'
+MODEL = "baseline"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
 RUN_NAME = "exp1"
 SEEDS = [42, 1955, 2003]
 BIG = 0 # 1= Big Dataset 
@@ -30,7 +31,7 @@ else:
 
 print(f"=== Starting multi seed experiment for: {MODEL} ===")
 
-# 1. RUN TRAINING
+trainable_parameters = None
 for seed in SEEDS:
     print(f"\n--- Launching TRAINING {MODEL} with Seed: {seed} ---")
     cmd = [
@@ -40,7 +41,18 @@ for seed in SEEDS:
         RUN_NAME,
         str(seed)
     ]
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="")
+
+    parameter_match = re.search(
+        r"Initialized .* with ([\d,]+) trainable params",
+        result.stdout,
+    )
+    if parameter_match and trainable_parameters is None:
+        trainable_parameters = int(parameter_match.group(1).replace(",", ""))
+
     if result.returncode != 0:
         print(f"Error during training seed: {seed}!")
         break
@@ -74,7 +86,7 @@ final_test_accs = []
 
 for seed in SEEDS:
     folder_name = f"{MODEL}_{RUN_NAME}_s{seed}{suffix_str}"
-    metrics_dir = os.path.join("metrics", folder_name)
+    metrics_dir = os.path.join("metrics", MODEL, folder_name)
     
 
     train_csv = os.path.join(metrics_dir, "metrics_train.csv")
@@ -130,12 +142,21 @@ if RUN_TEST and len(final_test_accs) == len(SEEDS):
 
 # Saving
 if SAVE:
-    summary_file = os.path.join("metrics", f"summary_{MODEL}_{RUN_NAME}{suffix_str}.txt")
+    model_parent_dir = os.path.join("metrics", MODEL)
+    os.makedirs(model_parent_dir, exist_ok=True)
+    
+    summary_file = os.path.join(model_parent_dir, f"summary_{MODEL}_{RUN_NAME}{suffix_str}.txt")
 
     with open(summary_file, "w") as f:
         f.write(f"Experiment: {MODEL}_{RUN_NAME}\n")
         f.write(f"Seeds: {SEEDS}\n\n")
-        
+        if trainable_parameters is not None:
+            f.write(    
+                "Trainable parameters: "
+                f"{trainable_parameters / 1_000_000:.2f} Millions " 
+                f"({trainable_parameters:,} total)\n\n"
+            )
+
         if len(final_val_losses) == len(SEEDS):
             f.write("--- VALIDATION (During Training) ---\n")
             f.write(f"Validation Loss final:       {mean_loss:.6f} +/- {std_loss:.6f}\n")
