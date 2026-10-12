@@ -13,7 +13,7 @@ BIG = 0 # 1= Big Dataset
         # Remember to also update the files runTrain.py,runTest.py,dataset.py with the big dataset (search #HERE)
 SAVE = 1        # 1 = Save
 RUN_TEST = 1    # 1 = Test
-GPU = 0 # Using gpu
+GPU = 1 # Using gpu
         # Recommended: only use Big=1 when GPU=1
 # ------------------------------------
 

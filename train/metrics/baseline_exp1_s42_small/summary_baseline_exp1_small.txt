@@ -1,7 +1,0 @@
-Experiment: baseline_exp1
-Seeds: [42, 1955, 2003]
-
---- VALIDATION (During Training) ---
-Validation Loss final:       0.005264 +/- 0.000189
-Validation Accuracy final:   97.22% +/- 0.09%
-
