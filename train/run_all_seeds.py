@@ -42,6 +42,9 @@ for seed in SEEDS:
         RUN_NAME,
         str(seed)
     ]
+
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
     
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     out_lines = []
@@ -85,7 +88,7 @@ if RUN_TEST:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         if proc.stdout:
             for line in proc.stdout:
-                print(line, end="", flush=True)
+                print(line, end="", flush=True) 
         proc.wait()
 
 print("\n=== Computing Final Metrics ===")
