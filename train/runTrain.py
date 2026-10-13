@@ -182,7 +182,7 @@ for epoch in range(epochs):
         scaler.scale(lossL1).backward()
 
         scaler.step(optimizerG)
-        scaler.update(
+        scaler.update()
 
         lossL1viz = lossL1.item()
         L1_accum += lossL1viz

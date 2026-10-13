@@ -27,7 +27,6 @@ except ImportError:
 # Checking V-Mamba (Selective Scan 2D) GPU
 try:
     # Importive selective_scan from MambaV repo for 2D scanning
-    import selective_scan
     from vmamba import VSSBlock  
     HAS_VMAMBA = True
 except ImportError:
