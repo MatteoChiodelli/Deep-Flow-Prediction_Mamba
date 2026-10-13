@@ -43,24 +43,25 @@ for seed in SEEDS:
         str(seed)
     ]
 
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    out_lines = []
-    
-    if proc.stdout:
-        for line in proc.stdout:
-            print(line, end="", flush=True)
-            out_lines.append(line)
-    proc.wait()
+    log_filename = f"temp_{MODEL}_{RUN_NAME}_s{seed}.log"
+    with open(log_filename, "w") as log_file:
+        proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+        proc.wait()
+
+    with open(log_filename, "r") as log_file:
+        result_stdout = log_file.read()
+        print(result_stdout)
 
     class ResultObj:
         stdout: str = ""
         returncode: int = 0
         
     result = ResultObj()
-    result.stdout = "".join(out_lines)
+    result.stdout = result_stdout
+    result.returncode = proc.returncode
+        
+    result = ResultObj()
+    result.stdout=result_stdout
     result.returncode = proc.returncode
 
     parameter_match = re.search(
