@@ -23,8 +23,11 @@ from DfpNet import TurbNetG, TurbNetAttention, TurbNetMambaSup,TurbNetMambaBot, 
 #///////////////////////////////////////////////////////////////////////////////
 import dataset
 import utils
-
+import torch.backends.cudnn as cudnn
 ######## Settings ########
+
+cudnn.enabled = False
+cudnn.benchmark = False
 
 # number of training iterations
 iterations = 90000
@@ -121,7 +124,7 @@ inputs  = inputs.cuda()
 
 ################################################################################
 is_small = True  #HERE
-suffix_str = "_small" if is_small else ""
+suffix_str = "_small" if is_small else ""   
 
 metrics_dir = os.path.join("metrics", model_type, f"{model_type}_{run_name}_s{seed}{suffix_str}")
 os.makedirs(metrics_dir, exist_ok=True)
