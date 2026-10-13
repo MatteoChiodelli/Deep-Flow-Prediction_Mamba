@@ -149,7 +149,7 @@ class TurbNetD(nn.Module):
 class VMamba_Block(nn.Module):
     def __init__(self, in_channels,ssm_d_state=16,ssm_ratio=2,ssm_conv=3,mlp_ratio=4):
         super().__init__()
-        self.vss_block = VSSBlock(hidden_dim=in_channels, channel_first=True,ssm_d_state=ssm_d_state,ssm_ratio=ssm_ratio,ssm_conv=ssm_conv,mlp_ratio=mlp_ratio)   
+        self.vss_block = VSSBlock(hidden_dim=in_channels, channel_first=True,ssm_d_state=ssm_d_state,ssm_ratio=ssm_ratio,ssm_conv=ssm_conv,mlp_ratio=mlp_ratio,forward_type="v02")   
 #hidden dim = input (input is equal to output) 
 #ssm_d_state = how big the hidden state is (defaul=16)
 #ssm_ratio = how much i increase the size of the input (default=2)
