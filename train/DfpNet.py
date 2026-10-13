@@ -159,7 +159,7 @@ class VMamba_Block(nn.Module):
 #mlp_ratio= how much "bigger" is the hidden state of the final mlp (default=4)
 
     def forward(self, x):
-        out = self.vss_block(x)
+        out = self.vss_block(x.contiguous())
         return out
 
 

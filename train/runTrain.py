@@ -116,6 +116,7 @@ trainable_params = sum(p.numel() for p in netG.parameters() if p.requires_grad)
 print(f"Initialized {model_type} with {trainable_params:,} trainable params")
 
 optimizerG = optim.Adam(netG.parameters(), lr=lrG, betas=(0.5, 0.999), weight_decay=0.0)
+scaler = torch.cuda.amp.GradScaler()
 
 targets = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
 inputs  = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
@@ -174,12 +175,14 @@ for epoch in range(epochs):
                     g['lr'] = currLr
 
         netG.zero_grad()
-        gen_out = netG(inputs)
+        with torch.cuda.amp.autocast(device_type="cuda"):
+            gen_out = netG(inputs)
+            lossL1 = criterionL1(gen_out, targets)
 
-        lossL1 = criterionL1(gen_out, targets)
-        lossL1.backward()
+        scaler.scale(lossL1).backward()
 
-        optimizerG.step()
+        scaler.step(optimizerG)
+        scaler.update(
 
         lossL1viz = lossL1.item()
         L1_accum += lossL1viz
