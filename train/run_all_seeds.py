@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-MODEL = "attention"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
+MODEL = "mambaSup"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
 RUN_NAME = "exp1"
 SEEDS = [42, 1955, 2003]
 BIG = 0 # 1= Big Dataset 
