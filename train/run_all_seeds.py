@@ -6,13 +6,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-MODEL = "baseline"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
+MODEL = "mambaSup"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
 RUN_NAME = "exp1"
 SEEDS = [42, 1955, 2003]
 BIG = 0 # 1= Big Dataset 
         # Remember to also update the files runTrain.py,runTest.py,dataset.py with the big dataset (search #HERE)
-SAVE = 1        # 1 = Save
-RUN_TEST = 1    # 1 = Test
+SAVE = 0        # 1 = Save
+RUN_TEST = 0    # 1 = Test
 GPU = 1 # Using gpu
         # Recommended: only use Big=1 when GPU=1
 # ------------------------------------
@@ -36,15 +36,29 @@ for seed in SEEDS:
     print(f"\n--- Launching TRAINING {MODEL} with Seed: {seed} ---")
     cmd = [
         "python",
+        "-u",
         TRAIN_SCRIPT_PATH,
         MODEL,
         RUN_NAME,
         str(seed)
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    print(result.stdout, end="")
-    if result.stderr:
-        print(result.stderr, end="")
+    
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    out_lines = []
+    
+    if proc.stdout:
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+            out_lines.append(line)
+    proc.wait()
+
+    class ResultObj:
+        stdout: str = ""
+        returncode: int = 0
+        
+    result = ResultObj()
+    result.stdout = "".join(out_lines)
+    result.returncode = proc.returncode
 
     parameter_match = re.search(
         r"Initialized .* with ([\d,]+) trainable params",
@@ -62,15 +76,17 @@ if RUN_TEST:
         print(f"\n--- Launching TESTING {MODEL} with Seed: {seed} ---")
         cmd = [
             "python",
+            "-u",
             TEST_SCRIPT_PATH,
             MODEL,
             RUN_NAME,
             str(seed)
         ]
-        result = subprocess.run(cmd)
-        if result.returncode != 0:
-            print(f"Error during testing seed: {seed}!")
-            break
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if proc.stdout:
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+        proc.wait()
 
 print("\n=== Computing Final Metrics ===")
 final_val_losses = []
@@ -88,7 +104,6 @@ for seed in SEEDS:
     folder_name = f"{MODEL}_{RUN_NAME}_s{seed}{suffix_str}"
     metrics_dir = os.path.join("metrics", MODEL, folder_name)
     
-
     train_csv = os.path.join(metrics_dir, "metrics_train.csv")
         
     if os.path.isfile(train_csv):
@@ -100,10 +115,8 @@ for seed in SEEDS:
         all_train_losses.append(df["train_loss"].values)
         all_val_losses.append(df["val_loss"].values)
 
-
     if RUN_TEST:
         test_csv = os.path.join(metrics_dir, "metrics_test.csv")
-
         if os.path.isfile(test_csv):
             df_test = pd.read_csv(test_csv)
             row = df_test[df_test['sample_id'].astype(str) == "ALL"]
@@ -113,18 +126,12 @@ for seed in SEEDS:
                 final_test_err_agg.append(row.iloc[-1]["rel_error_aggregate_pct"])
                 final_test_accs.append(row.iloc[-1]["accuracy_aggregate_pct"])
 
-
-# Metrics
 if len(final_val_losses) == len(SEEDS):
     mean_loss = np.mean(final_val_losses)
     std_loss  = np.std(final_val_losses)
     mean_acc  = np.mean(final_val_accs)
     std_acc   = np.std(final_val_accs)
     
-    print("\n--- VALIDATION (During Training) ---")
-    print(f"Val Loss: {mean_loss:.6f} +/- {std_loss:.6f}")
-    print(f"Val Acc:  {mean_acc:.2f}% +/- {std_acc:.2f}%")
-
 if RUN_TEST and len(final_test_accs) == len(SEEDS):
     mean_err_p   = np.mean(final_test_err_p)
     std_err_p    = np.std(final_test_err_p)
@@ -135,44 +142,45 @@ if RUN_TEST and len(final_test_accs) == len(SEEDS):
     mean_tacc    = np.mean(final_test_accs)
     std_tacc     = np.std(final_test_accs)
     
-    print("\n--- TESTING (Unseen Data) ---")
-    print(f"Test Err Agg: {mean_err_agg:.2f}% +/- {std_err_agg:.2f}%")
-    print(f"Test Acc:     {mean_tacc:.2f}% +/- {std_tacc:.2f}%")
+summary_lines = []
+summary_lines.append(f"Experiment: {MODEL}_{RUN_NAME}")
+summary_lines.append(f"Seeds: {SEEDS}\n")
 
+if trainable_parameters is not None:
+    summary_lines.append(    
+        "Trainable parameters: "
+        f"{trainable_parameters / 1_000_000:.2f} Millions " 
+        f"({trainable_parameters:,} total)\n"
+    )
 
-# Saving
+if len(final_val_losses) == len(SEEDS):
+    summary_lines.append("--- VALIDATION (During Training) ---")
+    summary_lines.append(f"Validation Loss final:       {mean_loss:.6f} +/- {std_loss:.6f}")
+    summary_lines.append(f"Validation Accuracy final:   {mean_acc:.2f}% +/- {std_acc:.2f}%\n")
+    
+if RUN_TEST and len(final_test_accs) == len(SEEDS):
+    summary_lines.append("--- TESTING (Unseen Data) ---")
+    summary_lines.append(f"Rel Error Pressure (%):      {mean_err_p:.2f}% +/- {std_err_p:.2f}%")
+    summary_lines.append(f"Rel Error Velocity (%):      {mean_err_v:.2f}% +/- {std_err_v:.2f}%")
+    summary_lines.append(f"Rel Error Aggregate (%):     {mean_err_agg:.2f}% +/- {std_err_agg:.2f}%")
+    summary_lines.append(f"Test Accuracy final:         {mean_tacc:.2f}% +/- {std_tacc:.2f}%\n")
+
+summary_text = "\n".join(summary_lines)
+
+print("\n" + "="*45)
+print(summary_text)
+print("="*45)
+
 if SAVE:
     model_parent_dir = os.path.join("metrics", MODEL)
     os.makedirs(model_parent_dir, exist_ok=True)
-    
     summary_file = os.path.join(model_parent_dir, f"summary_{MODEL}_{RUN_NAME}{suffix_str}.txt")
 
     with open(summary_file, "w") as f:
-        f.write(f"Experiment: {MODEL}_{RUN_NAME}\n")
-        f.write(f"Seeds: {SEEDS}\n\n")
-        if trainable_parameters is not None:
-            f.write(    
-                "Trainable parameters: "
-                f"{trainable_parameters / 1_000_000:.2f} Millions " 
-                f"({trainable_parameters:,} total)\n\n"
-            )
-
-        if len(final_val_losses) == len(SEEDS):
-            f.write("--- VALIDATION (During Training) ---\n")
-            f.write(f"Validation Loss final:       {mean_loss:.6f} +/- {std_loss:.6f}\n")
-            f.write(f"Validation Accuracy final:   {mean_acc:.2f}% +/- {std_acc:.2f}%\n\n")
-            
-        if RUN_TEST and len(final_test_accs) == len(SEEDS):
-            f.write("--- TESTING (Unseen Data) ---\n")
-            f.write(f"Rel Error Pressure (%):      {mean_err_p:.2f}% +/- {std_err_p:.2f}%\n")
-            f.write(f"Rel Error Velocity (%):      {mean_err_v:.2f}% +/- {std_err_v:.2f}%\n")
-            f.write(f"Rel Error Aggregate (%):     {mean_err_agg:.2f}% +/- {std_err_agg:.2f}%\n")
-            f.write(f"Test Accuracy final:         {mean_tacc:.2f}% +/- {std_tacc:.2f}%\n")
-
+        f.write(summary_text)
     print(f"\nRecup saved in {summary_file}")
-
 else:
-    print("\n[INFO] SAVE=0: Nessun file di riepilogo testuale generato. Preparazione del grafico a schermo...")
+    print("\n[INFO] SAVE=0: Nessun file di riepilogo testuale salvato su disco. Preparazione del grafico a schermo...")
     
     if all_train_losses and all_val_losses:
         plt.figure(figsize=(10, 6))
@@ -202,7 +210,6 @@ else:
         plt.tight_layout()
         
         plt.show()
-
 
 if RUN_TEST:
     print("\n Cleaning Temporary Test Logs...")

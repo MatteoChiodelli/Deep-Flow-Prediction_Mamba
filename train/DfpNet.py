@@ -217,9 +217,6 @@ class TurbNetMambaSup(nn.Module):
         dout4_out3 = torch.cat([dout4, out3], 1)
         dout3 = self.dlayer3(dout4_out3)
         dout3_out2b = torch.cat([dout3, outM], 1) #update also skip connection, I use it from the mamba output to the convo layer
-
-        # Again, here for simmetry
-
         dout2b = self.dlayer2b(dout3_out2b)
         dout2b_out2 = torch.cat([dout2b, out2], 1)
         dout2 = self.dlayer2(dout2b_out2)
