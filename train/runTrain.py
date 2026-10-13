@@ -175,7 +175,7 @@ for epoch in range(epochs):
                     g['lr'] = currLr
 
         netG.zero_grad()
-        with torch.cuda.amp.autocast(device_type="cuda"):
+        with torch.cuda.amp.autocast():
             gen_out = netG(inputs)
             lossL1 = criterionL1(gen_out, targets)
 

@@ -1442,7 +1442,7 @@ class SS2Dv2:
             v052dc=partial(self.forward_corev2, force_fp32=False, no_einsum=True, scan_mode="cascade2d"),
             v052d3=partial(self.forward_corev2, force_fp32=False, no_einsum=True, scan_mode=3), # debug
             # ===============================
-            v2=partial(self.forward_corev2, force_fp32=(not self.disable_force32), selective_scan_backend="core"),
+            v2=partial(self.forward_corev2, force_fp32=(not self.disable_force32), selective_scan_backend="torch"),
             v3=partial(self.forward_corev2, force_fp32=False, selective_scan_backend="oflex"),
         )
         self.forward_core = FORWARD_TYPES.get(forward_type, None)
