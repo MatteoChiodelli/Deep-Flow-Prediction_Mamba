@@ -34,6 +34,16 @@ except ImportError:
 
 if torch.cuda.is_available():
     print(f"[INFO] CUDA avaible. Mamba-1D: {HAS_MAMBA} | V-Mamba (SS2D): {HAS_VMAMBA}")
+    if HAS_VMAMBA:
+        # vmamba silently falls back to slow PyTorch kernels when the CUDA/Triton ones are missing
+        import os, shutil
+        import vmamba
+        scan_backend = "CUDA (mamba_ssm)" if vmamba.WITH_SELECTIVESCAN_MAMBA else "PyTorch fallback (slow)"
+        cross_backend = "Triton" if vmamba.WITH_TRITON else "PyTorch fallback (slow)"
+        # Triton compiles its kernels at runtime and needs a C compiler (same lookup as triton/common/build.py)
+        if vmamba.WITH_TRITON and not (os.environ.get("CC") or shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")):
+            cross_backend += " - ERROR: no C compiler found (install gcc), V-Mamba forward will fail"
+        print(f"[INFO] V-Mamba selective scan: {scan_backend} | cross-scan: {cross_backend}")
 else:
     print("[WARNING] CUDA not avaible. Mamba blocks forced on CPU.")
 #################
@@ -162,125 +172,6 @@ class VMamba_Block(nn.Module):
         return out
 
 
-class TurbNetMambaSup(nn.Module):
-    def __init__(self, channelExponent=6, dropout=0.):
-        super(TurbNetMambaSup, self).__init__()
-        channels = int(2 ** channelExponent + 0.5)
-
-        self.layer1 = nn.Sequential()
-        self.layer1.add_module('layer1_conv', nn.Conv2d(3, channels, 4, 2, 1, bias=True))
-
-        self.layer2 = blockUNet(channels  , channels*2, 'layer2', transposed=False, bn=True,  relu=False, dropout=dropout )
-        self.layer2b= blockUNet(channels*2, channels*2, 'layer2b',transposed=False, bn=True,  relu=False, dropout=dropout )
-
-        self.layer_vmamba = VMamba_Block(in_channels=channels*2) # Mamba Layer
-
-        self.layer3 = blockUNet(channels*2, channels*4, 'layer3', transposed=False, bn=True,  relu=False, dropout=dropout )
-        self.layer4 = blockUNet(channels*4, channels*8, 'layer4', transposed=False, bn=True,  relu=False, dropout=dropout ,  size=4 ) # note, size 4!
-        self.layer5 = blockUNet(channels*8, channels*8, 'layer5', transposed=False, bn=True,  relu=False, dropout=dropout , size=2,pad=0)
-        self.layer6 = blockUNet(channels*8, channels*8, 'layer6', transposed=False, bn=False, relu=False, dropout=dropout , size=2,pad=0)
-
-        # note, kernel size is internally reduced by one now
-        self.dlayer6 = blockUNet(channels*8, channels*8, 'dlayer6', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
-        self.dlayer5 = blockUNet(channels*16,channels*8, 'dlayer5', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
-        self.dlayer4 = blockUNet(channels*16,channels*4, 'dlayer4', transposed=True, bn=True, relu=True, dropout=dropout ) 
-        self.dlayer3 = blockUNet(channels*8, channels*2, 'dlayer3', transposed=True, bn=True, relu=True, dropout=dropout )
-
-        # We could place a Mamba layer here for simmetry, but we will try just for the encoding part first (since its the one that actually needs context)
-        # This, toghether with testing different hyp params, is one of the things we can test to do
-
-        self.dlayer2b= blockUNet(channels*4, channels*2, 'dlayer2b',transposed=True, bn=True, relu=True, dropout=dropout )
-        self.dlayer2 = blockUNet(channels*4, channels  , 'dlayer2', transposed=True, bn=True, relu=True, dropout=dropout )
-
-        self.dlayer1 = nn.Sequential()
-        self.dlayer1.add_module('dlayer1_relu', nn.ReLU(inplace=True))
-        self.dlayer1.add_module('dlayer1_tconv', nn.ConvTranspose2d(channels*2, 3, 4, 2, 1, bias=True))
-
-    def forward(self, x):
-        out1 = self.layer1(x)
-        out2 = self.layer2(out1)
-        out2b= self.layer2b(out2)
-
-        outM=self.layer_vmamba(out2b)
-
-        out3 = self.layer3(outM)
-        out4 = self.layer4(out3)
-        out5 = self.layer5(out4)
-        out6 = self.layer6(out5)
-
-        dout6 = self.dlayer6(out6)
-        dout6_out5 = torch.cat([dout6, out5], 1)
-        dout5 = self.dlayer5(dout6_out5)
-        dout5_out4 = torch.cat([dout5, out4], 1)
-        dout4 = self.dlayer4(dout5_out4)
-        dout4_out3 = torch.cat([dout4, out3], 1)
-        dout3 = self.dlayer3(dout4_out3)
-        dout3_out2b = torch.cat([dout3, outM], 1) #update also skip connection, I use it from the mamba output to the convo layer
-        dout2b = self.dlayer2b(dout3_out2b)
-        dout2b_out2 = torch.cat([dout2b, out2], 1)
-        dout2 = self.dlayer2(dout2b_out2)
-        dout2_out1 = torch.cat([dout2, out1], 1)
-        dout1 = self.dlayer1(dout2_out1)
-        return dout1
-
-
-class TurbNetMambaBot(nn.Module):
-    def __init__(self, channelExponent=6, dropout=0.):
-        super(TurbNetMambaBot, self).__init__()
-        channels = int(2 ** channelExponent + 0.5)
-
-        self.layer1 = nn.Sequential()
-        self.layer1.add_module('layer1_conv', nn.Conv2d(3, channels, 4, 2, 1, bias=True))
-
-        self.layer2 = blockUNet(channels  , channels*2, 'layer2', transposed=False, bn=True,  relu=False, dropout=dropout )
-        self.layer2b= blockUNet(channels*2, channels*2, 'layer2b',transposed=False, bn=True,  relu=False, dropout=dropout )
-        self.layer3 = blockUNet(channels*2, channels*4, 'layer3', transposed=False, bn=True,  relu=False, dropout=dropout )
-        self.layer4 = blockUNet(channels*4, channels*8, 'layer4', transposed=False, bn=True,  relu=False, dropout=dropout ,  size=4 ) # note, size 4!
-        self.layer5 = blockUNet(channels*8, channels*8, 'layer5', transposed=False, bn=True,  relu=False, dropout=dropout , size=2,pad=0)
-        self.layer6 = blockUNet(channels*8, channels*8, 'layer6', transposed=False, bn=False, relu=False, dropout=dropout , size=2,pad=0)
-
-        self.layer_vmamba = VMamba_Block(in_channels=channels*8) # Mamba Layer
-
-        self.dlayer6 = blockUNet(channels*8, channels*8, 'dlayer6', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
-        self.dlayer5 = blockUNet(channels*16,channels*8, 'dlayer5', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
-        self.dlayer4 = blockUNet(channels*16,channels*4, 'dlayer4', transposed=True, bn=True, relu=True, dropout=dropout ) 
-        self.dlayer3 = blockUNet(channels*8, channels*2, 'dlayer3', transposed=True, bn=True, relu=True, dropout=dropout )
-        self.dlayer2b= blockUNet(channels*4, channels*2, 'dlayer2b',transposed=True, bn=True, relu=True, dropout=dropout )
-        self.dlayer2 = blockUNet(channels*4, channels  , 'dlayer2', transposed=True, bn=True, relu=True, dropout=dropout )
-
-        self.dlayer1 = nn.Sequential()
-        self.dlayer1.add_module('dlayer1_relu', nn.ReLU(inplace=True))
-        self.dlayer1.add_module('dlayer1_tconv', nn.ConvTranspose2d(channels*2, 3, 4, 2, 1, bias=True))
-
-    def forward(self, x):
-        out1 = self.layer1(x)
-        out2 = self.layer2(out1)
-        out2b= self.layer2b(out2)
-        out3 = self.layer3(out2b)
-        out4 = self.layer4(out3)
-        out5 = self.layer5(out4)
-        out6 = self.layer6(out5)
-
-        outM=self.layer_vmamba(out6) #Mamba layer, here I use skip connection "over" the mamba block
-
-        dout6 = self.dlayer6(outM)
-        dout6_out5 = torch.cat([dout6, out5], 1)
-        dout5 = self.dlayer5(dout6_out5)
-        dout5_out4 = torch.cat([dout5, out4], 1)
-        dout4 = self.dlayer4(dout5_out4)
-        dout4_out3 = torch.cat([dout4, out3], 1)
-        dout3 = self.dlayer3(dout4_out3)
-        dout3_out2b = torch.cat([dout3, out2b], 1)
-        dout2b = self.dlayer2b(dout3_out2b)
-        dout2b_out2 = torch.cat([dout2b, out2], 1)
-        dout2 = self.dlayer2(dout2b_out2)
-        dout2_out1 = torch.cat([dout2, out1], 1)
-        dout1 = self.dlayer1(dout2_out1)
-
-        return dout1
-
-
-    
 class MultiHeadSelfAttention2d(nn.Module):
     #Multi-head self-attention applied to a 2D feature map
 
@@ -318,32 +209,71 @@ class MultiHeadSelfAttention2d(nn.Module):
         return x + attended
 
 
-class TurbNetAttention(nn.Module):
-    def __init__(
-        self,
-        channelExponent=6,
-        dropout=0.,
-        num_heads=8,
-        attention_dropout=0.,
-    ):
-        super(TurbNetAttention, self).__init__()
-        channels = int(2 ** channelExponent + 0.5)
+# Configurable TurbNet ---------------------------------------------------------------------------------------------------------------------------
+#
+# Same U-Net as TurbNetG, plus optional "mixer" blocks (V-Mamba or self-attention) applied to the output of encoder stages.
+# A mixer replaces the stage output both for the next encoder layer and for the skip connection.
+#
+# Encoder stage outputs for a 128x128 input (channels as multiples of 2**channelExponent):
+#   in   128x128, 3 channels (network input, before layer1)
+#   out1  64x64 x1 | out2  32x32 x2 | out2b 16x16 x2 | out3  8x8 x4 | out4  4x4 x8 | out5  2x2 x8 | out6  1x1 x8
+INPUT_CHANNELS = 3
+STAGE_CHANNELS = {"in": None, "out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4": 8, "out5": 8, "out6": 8}
 
+# model name -> {stage: mixer type}
+MODEL_CONFIGS = {
+    # Original variants, kept identical to reproduce previous runs and load their checkpoints
+    "baseline":  {},
+    "mambaSup":  {"out2b": "vmamba"},
+    "fullMamba": {"in": "vmamba", "out1": "vmamba", "out2": "vmamba", "out2b": "vmamba", "out3": "vmamba", "out4": "vmamba", "out5": "vmamba"},
+    # Experimental configurations (README, section 2)
+    "C0": {},                                          # baseline
+    "C1": {"out1": "vmamba", "out4": "attention"},     # high-res Mamba + bottleneck attention
+    "C2": {"out1": "vmamba"},                          # high-res Mamba only
+    "C3": {"out4": "vmamba"},                          # bottleneck Mamba only
+    "C4": {"out4": "attention"},                       # bottleneck attention only
+}
+
+
+class TurbNet(nn.Module):
+    def __init__(self, mixers=None, channelExponent=6, dropout=0., num_heads=8, attention_dropout=0.):
+        super(TurbNet, self).__init__()
+        channels = int(2 ** channelExponent + 0.5)
+        mixers = dict(mixers or {})
+        unknown = set(mixers) - set(STAGE_CHANNELS)
+        if unknown:
+            raise ValueError(f"Unknown stages: {sorted(unknown)}. Available: {list(STAGE_CHANNELS)}")
+        self.num_heads = num_heads
+        self.attention_dropout = attention_dropout
+
+        # module name per stage: "layer_<type>" (as in the original variants), "layer_<type>_<stage>" if the type is used more than once
+        kinds = list(mixers.values())
+        self.mixer_names = {
+            stage: f"layer_{kind}" if kinds.count(kind) == 1 else f"layer_{kind}_{stage}"
+            for stage, kind in mixers.items()
+        }
+        self._mixers = mixers
+        self._channels = channels
+
+        # modules are registered in forward order (mixers right after their stage) so that, with the same seed,
+        # the weight initialization matches the original TurbNetG / TurbNetMambaSup / TurbNetMambaBot / TurbNetAttention
+        self._add_mixer("in")
         self.layer1 = nn.Sequential()
         self.layer1.add_module('layer1_conv', nn.Conv2d(3, channels, 4, 2, 1, bias=True))
+        self._add_mixer("out1")
 
         self.layer2 = blockUNet(channels  , channels*2, 'layer2', transposed=False, bn=True,  relu=False, dropout=dropout )
+        self._add_mixer("out2")
         self.layer2b= blockUNet(channels*2, channels*2, 'layer2b',transposed=False, bn=True,  relu=False, dropout=dropout )
+        self._add_mixer("out2b")
         self.layer3 = blockUNet(channels*2, channels*4, 'layer3', transposed=False, bn=True,  relu=False, dropout=dropout )
+        self._add_mixer("out3")
         self.layer4 = blockUNet(channels*4, channels*8, 'layer4', transposed=False, bn=True,  relu=False, dropout=dropout ,  size=4 ) # note, size 4!
+        self._add_mixer("out4")
         self.layer5 = blockUNet(channels*8, channels*8, 'layer5', transposed=False, bn=True,  relu=False, dropout=dropout , size=2,pad=0)
+        self._add_mixer("out5")
         self.layer6 = blockUNet(channels*8, channels*8, 'layer6', transposed=False, bn=False, relu=False, dropout=dropout , size=2,pad=0)
-
-        self.layer_attention = MultiHeadSelfAttention2d(
-            channels=channels * 8,
-            num_heads=num_heads,
-            dropout=attention_dropout,
-        )
+        self._add_mixer("out6")
 
         self.dlayer6 = blockUNet(channels*8, channels*8, 'dlayer6', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
         self.dlayer5 = blockUNet(channels*16,channels*8, 'dlayer5', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
@@ -356,18 +286,33 @@ class TurbNetAttention(nn.Module):
         self.dlayer1.add_module('dlayer1_relu', nn.ReLU(inplace=True))
         self.dlayer1.add_module('dlayer1_tconv', nn.ConvTranspose2d(channels*2, 3, 4, 2, 1, bias=True))
 
+    def _add_mixer(self, stage):
+        kind = self._mixers.get(stage)
+        if kind is None:
+            return
+        in_channels = INPUT_CHANNELS if stage == "in" else self._channels * STAGE_CHANNELS[stage]
+        if kind == "vmamba":
+            block = VMamba_Block(in_channels=in_channels)
+        elif kind == "attention":
+            block = MultiHeadSelfAttention2d(channels=in_channels, num_heads=self.num_heads, dropout=self.attention_dropout)
+        else:
+            raise ValueError(f"Unknown mixer type: {kind}")
+        self.add_module(self.mixer_names[stage], block)
+
+    def _mix(self, stage, x):
+        name = self.mixer_names.get(stage)
+        return x if name is None else getattr(self, name)(x)
+
     def forward(self, x):
-        out1 = self.layer1(x)
-        out2 = self.layer2(out1)
-        out2b= self.layer2b(out2)
-        out3 = self.layer3(out2b)
-        out4 = self.layer4(out3)
-        out5 = self.layer5(out4)
-        out6 = self.layer6(out5)
-
-        outA = self.layer_attention(out6)
-
-        dout6 = self.dlayer6(outA)
+        x    = self._mix("in",    x)
+        out1 = self._mix("out1",  self.layer1(x))
+        out2 = self._mix("out2",  self.layer2(out1))
+        out2b= self._mix("out2b", self.layer2b(out2))
+        out3 = self._mix("out3",  self.layer3(out2b))
+        out4 = self._mix("out4",  self.layer4(out3))
+        out5 = self._mix("out5",  self.layer5(out4))
+        out6 = self._mix("out6",  self.layer6(out5))
+        dout6 = self.dlayer6(out6)
         dout6_out5 = torch.cat([dout6, out5], 1)
         dout5 = self.dlayer5(dout6_out5)
         dout5_out4 = torch.cat([dout5, out4], 1)
@@ -380,5 +325,10 @@ class TurbNetAttention(nn.Module):
         dout2 = self.dlayer2(dout2b_out2)
         dout2_out1 = torch.cat([dout2, out1], 1)
         dout1 = self.dlayer1(dout2_out1)
-
         return dout1
+
+
+def build_model(model_type, channelExponent=6, dropout=0.):
+    if model_type not in MODEL_CONFIGS:
+        raise ValueError(f"Unknown Model: {model_type}. Available: {list(MODEL_CONFIGS)}")
+    return TurbNet(MODEL_CONFIGS[model_type], channelExponent=channelExponent, dropout=dropout)

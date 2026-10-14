@@ -6,7 +6,7 @@
 #
 ################
 
-import os, sys, random
+import os, sys, random, time
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,7 +16,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import torch.optim as optim
 
-from DfpNet import TurbNetG, TurbNetAttention, TurbNetMambaBot,TurbNetMambaSup, weights_init
+from DfpNet import build_model, weights_init
 import dataset
 import utils
 
@@ -83,16 +83,7 @@ epochs = int(iterations / len(trainLoader) + 0.5)
 if epochs < 1:
     epochs = 1
 
-if model_type == "baseline":
-    netG = TurbNetG(channelExponent=expo, dropout=dropout)
-elif model_type == "attention":
-    netG = TurbNetAttention(channelExponent=expo, dropout=dropout)
-elif model_type == "mambaBot":
-    netG = TurbNetMambaBot(channelExponent=expo, dropout=dropout)
-elif model_type == "mambaSup":
-    netG = TurbNetMambaSup(channelExponent=expo, dropout=dropout)
-else:
-    raise ValueError(f"Unknown Model: {model_type}")
+netG = build_model(model_type, channelExponent=expo, dropout=dropout)
 
 print(netG)
 model_parameters = filter(lambda p: p.requires_grad, netG.parameters())
@@ -137,7 +128,8 @@ with open(metrics_file, mode="w", newline="") as f:
         "val_accuracy_pct",
         "val_err_p",   
         "val_err_vx",  
-        "val_err_vy"
+        "val_err_vy",
+        "epoch_time_s"
     ])
 
 history_train_loss = []
@@ -147,6 +139,8 @@ history_val_loss = []
 
 for epoch in range(epochs):
     print("Starting epoch {} / {}".format((epoch + 1), epochs))
+
+    epoch_start = time.perf_counter()
 
     netG.train()
     L1_accum = 0.0
@@ -233,6 +227,7 @@ for epoch in range(epochs):
                 img_path = os.path.join(results_dir, "final_train_sample")
                 utils.imageOut(img_path, outputs_denormalized, targets_denormalized, saveTargets=True)
 # ------------------------------------------------------------
+    epoch_time_s = time.perf_counter() - epoch_start
 
     epoch_val_loss = L1val_accum / len(valiLoader)
     val_rel_error = val_abs_diff_sum / max(val_target_sum, 1e-8)
@@ -244,6 +239,7 @@ for epoch in range(epochs):
 
     print(f"[Epoch {epoch+1:03d}/{epochs:03d}] Train Loss: {epoch_train_loss:.6f} (Acc: {train_acc_pct:.2f}%) | Val Loss: {epoch_val_loss:.6f} (Acc: {val_acc_pct:.2f}%)")
     print(f"                                   -> Val Error p: {val_err_p_pct:.2f}%, vx: {val_err_vx_pct:.2f}%, vy: {val_err_vy_pct:.2f}%")
+    print(f"                                   -> Time: {epoch_time_s:.1f}s")
     
     with open(metrics_file, mode="a", newline="") as f:
         writer = csv.writer(f)
@@ -258,7 +254,8 @@ for epoch in range(epochs):
 
             val_err_p_pct,  
             val_err_vx_pct, 
-            val_err_vy_pct
+            val_err_vy_pct,
+            epoch_time_s
         ])
 
     history_train_loss.append(epoch_train_loss)
