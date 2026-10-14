@@ -93,6 +93,10 @@ print("\n=== Computing Final Metrics ===")
 final_val_losses = []
 final_val_accs = []
 
+final_val_err_p = []
+final_val_err_vx = []
+final_val_err_vy = []
+
 all_train_losses = []
 all_val_losses = []
 
@@ -112,6 +116,11 @@ for seed in SEEDS:
         last_row = df.iloc[-1]
         final_val_losses.append(last_row["val_loss"])
         final_val_accs.append(last_row["val_accuracy_pct"])
+
+        if "val_err_p" in df.columns:
+            final_val_err_p.append(last_row["val_err_p"])
+            final_val_err_vx.append(last_row["val_err_vx"])
+            final_val_err_vy.append(last_row["val_err_vy"])
         
         all_train_losses.append(df["train_loss"].values)
         all_val_losses.append(df["val_loss"].values)
@@ -132,6 +141,14 @@ if len(final_val_losses) == len(SEEDS):
     std_loss  = np.std(final_val_losses)
     mean_acc  = np.mean(final_val_accs)
     std_acc   = np.std(final_val_accs)
+
+    if len(final_val_err_p) == len(SEEDS):
+        mean_vp = np.mean(final_val_err_p)
+        std_vp = np.std(final_val_err_p)
+        mean_vvx = np.mean(final_val_err_vx)
+        std_vvx = np.std(final_val_err_vx)
+        mean_vvy = np.mean(final_val_err_vy)
+        std_vvy = np.std(final_val_err_vy)
     
 if RUN_TEST and len(final_test_accs) == len(SEEDS):
     mean_err_p   = np.mean(final_test_err_p)
@@ -158,6 +175,12 @@ if len(final_val_losses) == len(SEEDS):
     summary_lines.append("--- VALIDATION (During Training) ---")
     summary_lines.append(f"Validation Loss final:       {mean_loss:.6f} +/- {std_loss:.6f}")
     summary_lines.append(f"Validation Accuracy final:   {mean_acc:.2f}% +/- {std_acc:.2f}%\n")
+    if len(final_val_err_p) == len(SEEDS):
+        summary_lines.append(f"Val Error Pressure (p):      {mean_vp:.2f}% +/- {std_vp:.2f}%")
+        summary_lines.append(f"Val Error Velocity X (vx):   {mean_vvx:.2f}% +/- {std_vvx:.2f}%")
+        summary_lines.append(f"Val Error Velocity Y (vy):   {mean_vvy:.2f}% +/- {std_vvy:.2f}%\n")
+    else:
+        summary_lines.append("")
     
 if RUN_TEST and len(final_test_accs) == len(SEEDS):
     summary_lines.append("--- TESTING (Unseen Data) ---")

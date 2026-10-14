@@ -143,7 +143,10 @@ with open(metrics_file, mode="w", newline="") as f:
         "train_rel_error", 
         "val_rel_error", 
         "train_accuracy_pct", 
-        "val_accuracy_pct"
+        "val_accuracy_pct",
+        "val_err_p",   
+        "val_err_vx",  
+        "val_err_vy"
     ])
 
 history_train_loss = []
@@ -208,6 +211,12 @@ for epoch in range(epochs):
 ################################################################################
     val_abs_diff_sum = 0.0
     val_target_sum = 0.0
+    val_abs_diff_p = 0.0
+    val_target_p = 0.0
+    val_abs_diff_vx = 0.0
+    val_target_vx = 0.0
+    val_abs_diff_vy = 0.0
+    val_target_vy = 0.0
 
     with torch.no_grad():
 #///////////////////////////////////////////////////////////////////////////////        
@@ -226,6 +235,15 @@ for epoch in range(epochs):
 ################################################################################
             val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
             val_target_sum += torch.sum(torch.abs(targets)).item()
+
+            val_abs_diff_p += torch.sum(torch.abs(outputs[:, 0, :, :] - targets[:, 0, :, :])).item()
+            val_target_p += torch.sum(torch.abs(targets[:, 0, :, :])).item()
+            
+            val_abs_diff_vx += torch.sum(torch.abs(outputs[:, 1, :, :] - targets[:, 1, :, :])).item()
+            val_target_vx += torch.sum(torch.abs(targets[:, 1, :, :])).item()
+            
+            val_abs_diff_vy += torch.sum(torch.abs(outputs[:, 2, :, :] - targets[:, 2, :, :])).item()
+            val_target_vy += torch.sum(torch.abs(targets[:, 2, :, :])).item()
 #///////////////////////////////////////////////////////////////////////////////
 
             if i == 0 and epoch == (epochs - 1):
@@ -246,7 +264,12 @@ for epoch in range(epochs):
     val_rel_error = val_abs_diff_sum / max(val_target_sum, 1e-8)
     val_acc_pct = max(0.0, (1.0 - val_rel_error) * 100.0)
 
+    val_err_p_pct = (val_abs_diff_p / max(val_target_p, 1e-8)) * 100.0
+    val_err_vx_pct = (val_abs_diff_vx / max(val_target_vx, 1e-8)) * 100.0
+    val_err_vy_pct = (val_abs_diff_vy / max(val_target_vy, 1e-8)) * 100.0
+
     print(f"[Epoch {epoch+1:03d}/{epochs:03d}] Train Loss: {epoch_train_loss:.6f} (Acc: {train_acc_pct:.2f}%) | Val Loss: {epoch_val_loss:.6f} (Acc: {val_acc_pct:.2f}%)")
+    print(f"                                   -> Val Error p: {val_err_p_pct:.2f}%, vx: {val_err_vx_pct:.2f}%, vy: {val_err_vy_pct:.2f}%")
 
     with open(metrics_file, mode="a", newline="") as f:
         writer = csv.writer(f)
@@ -257,7 +280,11 @@ for epoch in range(epochs):
             train_rel_error, 
             val_rel_error, 
             train_acc_pct, 
-            val_acc_pct
+            val_acc_pct,
+
+            val_err_p_pct,  
+            val_err_vx_pct, 
+            val_err_vy_pct
         ])
 
     history_train_loss.append(epoch_train_loss)
