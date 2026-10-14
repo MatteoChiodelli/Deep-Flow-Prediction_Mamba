@@ -157,7 +157,7 @@ class TurbNetD(nn.Module):
 # Novelty ----------------------------------------------------------------------------------------------------------------------------------------
 
 class VMamba_Block(nn.Module):
-    def __init__(self, in_channels,ssm_d_state=16,ssm_ratio=2,ssm_conv=2,mlp_ratio=4):
+    def __init__(self, in_channels,ssm_d_state=16,ssm_ratio=2,ssm_conv=1,mlp_ratio=4):
         super().__init__()
         self.vss_block = VSSBlock(hidden_dim=in_channels, channel_first=True,ssm_d_state=ssm_d_state,ssm_ratio=ssm_ratio,ssm_conv=ssm_conv,mlp_ratio=mlp_ratio,forward_type="v02")   
 #hidden dim = input (input is equal to output) 
@@ -225,7 +225,7 @@ MODEL_CONFIGS = {
     # Original variants, kept identical to reproduce previous runs and load their checkpoints
     "baseline":  {},
     "mambaSup":  {"out2b": "vmamba_big"},
-    "fullMamba": { "out1": "vmamba_big", "out2_big": "vmamba_big", "out2b": "vmamba_small", "out3": "vmamba_small", "out4": "vmamba_small", "out5": "vmamba_small"},
+    "fullMamba": { "out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_small", "out3": "vmamba_small", "out4": "vmamba_small", "out5": "vmamba_small"},
     # Experimental configurations (README, section 2)
     "C0": {},                                          # baseline
     "C1": {"out1": "vmamba_big", "out4": "attention"},     # high-res Mamba + bottleneck attention
