@@ -1,0 +1,12 @@
+Experiment: mambaSup_exp1
+Seeds: [42, 1955, 2003]
+
+Trainable parameters: 2.42 Millions (2,421,187 total)
+
+--- VALIDATION (During Training) ---
+Validation Loss final:       0.003592 +/- 0.000115
+Validation Accuracy final:   98.10% +/- 0.05%
+
+Val Error Pressure (p):      9.51% +/- 0.20%
+Val Error Velocity X (vx):   1.08% +/- 0.04%
+Val Error Velocity Y (vy):   4.21% +/- 0.08%

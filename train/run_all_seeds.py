@@ -6,13 +6,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-MODEL = "baseline"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
+MODEL = "mambaSup"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
 RUN_NAME = "exp1"
 SEEDS = [42, 1955, 2003]
 BIG = 0 # 1= Big Dataset 
         # Remember to also update the files runTrain.py,runTest.py,dataset.py with the big dataset (search #HERE)
 SAVE = 1        # 1 = Save
-RUN_TEST = 1    # 1 = Test
+RUN_TEST = 0    # 1 = Test
 GPU = 1 # Using gpu
         # Recommended: only use Big=1 when GPU=1
 # ------------------------------------
