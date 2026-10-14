@@ -3,9 +3,12 @@ torch==2.1.2+cu121
 torchvision==0.16.2+cu121
 torchaudio==2.1.2+cu121
 packaging
+setuptools<70
+wheel
 ninja
-causal-conv1d>=1.1.0
-mamba-ssm
+causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.4.0/causal_conv1d-1.4.0+cu122torch2.1cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+mamba-ssm @ https://github.com/state-spaces/mamba/releases/download/v2.2.2/mamba_ssm-2.2.2+cu122torch2.1cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+transformers==4.44.2
 einops
 timm
 triton
@@ -14,3 +17,4 @@ scipy
 matplotlib
 tensorboard
 pandas
+fvcore
