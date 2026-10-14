@@ -226,12 +226,8 @@ MODEL_CONFIGS = {
     "baseline":  {},
     "mambaSup":  {"out2b": "vmamba_big"},
     "fullMamba": { "out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_small", "out3": "vmamba_small", "out4": "vmamba_small", "out5": "vmamba_small"},
-    # Experimental configurations (README, section 2)
-    "C0": {},                                          # baseline
-    "C1": {"out1": "vmamba_big", "out4": "attention"},     # high-res Mamba + bottleneck attention
-    "C2": {"out1": "vmamba_big"},                          # high-res Mamba only
-    "C3": {"out4": "vmamba_small"},                          # bottleneck Mamba only
-    "C4": {"out4": "attention"},                       # bottleneck attention only
+    "halfMamba": {"out1": "vmamba", "out2": "vmamba", "out2b": "vmamba"},
+        "halfMambaPush": {"out1": "vmamba", "out2": "vmamba", "out2b": "attention"},
 }
 
 
