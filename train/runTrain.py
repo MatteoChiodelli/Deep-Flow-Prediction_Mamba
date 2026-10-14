@@ -26,8 +26,8 @@ import utils
 import torch.backends.cudnn as cudnn
 ######## Settings ########
 
-cudnn.enabled = False
-cudnn.benchmark = False
+cudnn.enabled = True
+cudnn.benchmark = True
 
 # number of training iterations
 iterations = 90000
@@ -74,10 +74,10 @@ torch.cuda.manual_seed_all(seed)
 
 # create pytorch data object with dfp dataset
 data = dataset.TurbDataset(prop, shuffle=1)
-trainLoader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True)
+trainLoader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=True)
 print("Training batches: {}".format(len(trainLoader)))
 dataValidation = dataset.ValiDataset(data)
-valiLoader = DataLoader(dataValidation, batch_size=batch_size, shuffle=False, drop_last=True) 
+valiLoader = DataLoader(dataValidation, batch_size=batch_size, shuffle=False, drop_last=True,num_workers=4,pin_memory=True) 
 print("Validation batches: {}".format(len(valiLoader)))
 
 # setup training
@@ -192,8 +192,8 @@ for epoch in range(epochs):
 
 ################################################################################
         with torch.no_grad():
-            train_abs_diff_sum += torch.sum(torch.abs(gen_out - targets)).item()
-            train_target_sum += torch.sum(torch.abs(targets)).item()
+            train_abs_diff_sum += torch.sum(torch.abs(gen_out - targets))
+            train_target_sum += torch.sum(torch.abs(targets))
 #///////////////////////////////////////////////////////////////////////////////
         if i==len(trainLoader)-1:
             logline = "Epoch: {}, batch-idx: {}, L1: {}\n".format(epoch, i, lossL1viz)
@@ -201,7 +201,7 @@ for epoch in range(epochs):
 
 ################################################################################
     epoch_train_loss = L1_accum / len(trainLoader)
-    train_rel_error = train_abs_diff_sum / max(train_target_sum, 1e-8)
+    train_rel_error = train_abs_diff_sum.item() / max(train_target_sum.item(), 1e-8)
     train_acc_pct = max(0.0, (1.0 - train_rel_error) * 100.0)
 #///////////////////////////////////////////////////////////////////////////////
     # validation

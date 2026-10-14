@@ -1,0 +1,18 @@
+Experiment: baseline_exp1
+Seeds: [42, 1955, 2003]
+
+Trainable parameters: 2.33 Millions (2,332,035 total)
+
+--- VALIDATION (During Training) ---
+Validation Loss final:       0.003654 +/- 0.000017
+Validation Accuracy final:   98.07% +/- 0.00%
+
+Val Error Pressure (p):      9.60% +/- 0.41%
+Val Error Velocity X (vx):   1.10% +/- 0.01%
+Val Error Velocity Y (vy):   4.31% +/- 0.13%
+
+--- TESTING (Unseen Data) ---
+Rel Error Pressure (%):      14.50% +/- 0.58%
+Rel Error Velocity (%):      2.42% +/- 0.12%
+Rel Error Aggregate (%):     2.92% +/- 0.14%
+Test Accuracy final:         97.08% +/- 0.14%
