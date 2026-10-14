@@ -157,7 +157,7 @@ class TurbNetD(nn.Module):
 # Novelty ----------------------------------------------------------------------------------------------------------------------------------------
 
 class VMamba_Block(nn.Module):
-    def __init__(self, in_channels,ssm_d_state=16,ssm_ratio=2,ssm_conv=3,mlp_ratio=4):
+    def __init__(self, in_channels,ssm_d_state=16,ssm_ratio=2,ssm_conv=2,mlp_ratio=4):
         super().__init__()
         self.vss_block = VSSBlock(hidden_dim=in_channels, channel_first=True,ssm_d_state=ssm_d_state,ssm_ratio=ssm_ratio,ssm_conv=ssm_conv,mlp_ratio=mlp_ratio,forward_type="v02")   
 #hidden dim = input (input is equal to output) 
@@ -224,13 +224,13 @@ STAGE_CHANNELS = {"in": None, "out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4
 MODEL_CONFIGS = {
     # Original variants, kept identical to reproduce previous runs and load their checkpoints
     "baseline":  {},
-    "mambaSup":  {"out2b": "vmamba"},
-    "fullMamba": { "out1": "vmamba", "out2": "vmamba", "out2b": "vmamba", "out3": "vmamba", "out4": "vmamba", "out5": "vmamba"},
+    "mambaSup":  {"out2b": "vmamba_big"},
+    "fullMamba": { "out1": "vmamba_big", "out2_big": "vmamba_big", "out2b": "vmamba_small", "out3": "vmamba_small", "out4": "vmamba_small", "out5": "vmamba_small"},
     # Experimental configurations (README, section 2)
     "C0": {},                                          # baseline
-    "C1": {"out1": "vmamba", "out4": "attention"},     # high-res Mamba + bottleneck attention
-    "C2": {"out1": "vmamba"},                          # high-res Mamba only
-    "C3": {"out4": "vmamba"},                          # bottleneck Mamba only
+    "C1": {"out1": "vmamba_big", "out4": "attention"},     # high-res Mamba + bottleneck attention
+    "C2": {"out1": "vmamba_big"},                          # high-res Mamba only
+    "C3": {"out4": "vmamba_small"},                          # bottleneck Mamba only
     "C4": {"out4": "attention"},                       # bottleneck attention only
 }
 
@@ -291,8 +291,10 @@ class TurbNet(nn.Module):
         if kind is None:
             return
         in_channels = INPUT_CHANNELS if stage == "in" else self._channels * STAGE_CHANNELS[stage]
-        if kind == "vmamba":
-            block = VMamba_Block(in_channels=in_channels)
+        if kind == "vmamba_big":
+            block = VMamba_Block(in_channels=in_channels,)
+        elif kind=="vmamba_small":
+            block = VMamba_Block(in_channels=in_channels,mlp_ratio=2,ssm_ratio=1,ssm_d_state=8)
         elif kind == "attention":
             block = MultiHeadSelfAttention2d(channels=in_channels, num_heads=self.num_heads, dropout=self.attention_dropout)
         else:
