@@ -223,8 +223,7 @@ MODEL_CONFIGS = {
     # Original variants, kept identical to reproduce previous runs and load their checkpoints
     "baseline":  {},
     "mambaSup":  {"out2b": "vmamba"},
-    "mambaBot":  {"out6": "vmamba"},       # note: out6 is 1x1, no spatial context
-    "attention": {"out6": "attention"},    # note: out6 is 1x1, no spatial context
+    "fullMamba": {"out1": "vmamba", "out2": "vmamba", "out2b": "vmamba", "out3": "vmamba", "out4": "vmamba", "out5": "vmamba"}
     # Experimental configurations (README, section 2)
     "C0": {},                                          # baseline
     "C1": {"out1": "vmamba", "out4": "attention"},     # high-res Mamba + bottleneck attention
