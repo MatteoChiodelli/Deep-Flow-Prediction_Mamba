@@ -215,15 +215,17 @@ class MultiHeadSelfAttention2d(nn.Module):
 # A mixer replaces the stage output both for the next encoder layer and for the skip connection.
 #
 # Encoder stage outputs for a 128x128 input (channels as multiples of 2**channelExponent):
+#   in   128x128, 3 channels (network input, before layer1)
 #   out1  64x64 x1 | out2  32x32 x2 | out2b 16x16 x2 | out3  8x8 x4 | out4  4x4 x8 | out5  2x2 x8 | out6  1x1 x8
-STAGE_CHANNELS = {"out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4": 8, "out5": 8, "out6": 8}
+INPUT_CHANNELS = 3
+STAGE_CHANNELS = {"in": None, "out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4": 8, "out5": 8, "out6": 8}
 
 # model name -> {stage: mixer type}
 MODEL_CONFIGS = {
     # Original variants, kept identical to reproduce previous runs and load their checkpoints
     "baseline":  {},
     "mambaSup":  {"out2b": "vmamba"},
-    "fullMamba": {"out1": "vmamba", "out2": "vmamba", "out2b": "vmamba", "out3": "vmamba", "out4": "vmamba", "out5": "vmamba"}
+    "fullMamba": {"in": "vmamba", "out1": "vmamba", "out2": "vmamba", "out2b": "vmamba", "out3": "vmamba", "out4": "vmamba", "out5": "vmamba"},
     # Experimental configurations (README, section 2)
     "C0": {},                                          # baseline
     "C1": {"out1": "vmamba", "out4": "attention"},     # high-res Mamba + bottleneck attention
@@ -255,6 +257,7 @@ class TurbNet(nn.Module):
 
         # modules are registered in forward order (mixers right after their stage) so that, with the same seed,
         # the weight initialization matches the original TurbNetG / TurbNetMambaSup / TurbNetMambaBot / TurbNetAttention
+        self._add_mixer("in")
         self.layer1 = nn.Sequential()
         self.layer1.add_module('layer1_conv', nn.Conv2d(3, channels, 4, 2, 1, bias=True))
         self._add_mixer("out1")
@@ -287,7 +290,7 @@ class TurbNet(nn.Module):
         kind = self._mixers.get(stage)
         if kind is None:
             return
-        in_channels = self._channels * STAGE_CHANNELS[stage]
+        in_channels = INPUT_CHANNELS if stage == "in" else self._channels * STAGE_CHANNELS[stage]
         if kind == "vmamba":
             block = VMamba_Block(in_channels=in_channels)
         elif kind == "attention":
@@ -301,6 +304,7 @@ class TurbNet(nn.Module):
         return x if name is None else getattr(self, name)(x)
 
     def forward(self, x):
+        x    = self._mix("in",    x)
         out1 = self._mix("out1",  self.layer1(x))
         out2 = self._mix("out2",  self.layer2(out1))
         out2b= self._mix("out2b", self.layer2b(out2))
