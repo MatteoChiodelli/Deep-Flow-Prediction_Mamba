@@ -225,13 +225,8 @@ MODEL_CONFIGS = {
     # Original variants, kept identical to reproduce previous runs and load their checkpoints
     "baseline":  {},
     "mambaSup":  {"out2b": "vmamba"},
-    "fullMamba": { "out1": "vmamba", "out2": "vmamba", "out2b": "vmamba", "out3": "vmamba", "out4": "vmamba", "out5": "vmamba"},
-    # Experimental configurations (README, section 2)
-    "C0": {},                                          # baseline
-    "C1": {"out1": "vmamba", "out4": "attention"},     # high-res Mamba + bottleneck attention
-    "C2": {"out1": "vmamba"},                          # high-res Mamba only
-    "C3": {"out4": "vmamba"},                          # bottleneck Mamba only
-    "C4": {"out4": "attention"},                       # bottleneck attention only
+    "halfMamba": {"out1": "vmamba", "out2": "vmamba", "out2b": "vmamba"},
+    "fullMamba": {"out1": "vmamba", "out2": "vmamba", "out2b": "vmamba", "out3": "vmamba", "out4": "vmamba", "out5": "vmamba"},
 }
 
 
