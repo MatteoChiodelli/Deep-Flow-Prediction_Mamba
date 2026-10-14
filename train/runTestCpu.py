@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from DfpNet import TurbNetG, weights_init,TurbNetMambaBot,TurbNetMambaSup,TurbNetAttention
+from DfpNet import build_model, weights_init
 from dataset import TurbDataset
 import utils
 from utils import log
@@ -49,16 +49,7 @@ targets_dn = Variable(targets_dn)
 outputs_dn = torch.FloatTensor(1, 3, 128, 128)
 outputs_dn = Variable(outputs_dn)
 
-if model_type == "baseline":
-    netG = TurbNetG(channelExponent=expo)
-elif model_type == "attention":
-    netG = TurbNetAttention() 
-elif model_type == "mambaBot":
-    netG = TurbNetMambaBot(channelExponent=expo)
-elif model_type == "mambaSup":
-    netG = TurbNetMambaSup(channelExponent=expo)
-else:
-    raise ValueError(f"Unknown Model: {model_type}")
+netG = build_model(model_type, channelExponent=expo)
 
 lf = "./" + prefix + "testout{}.txt".format(suffix) 
 utils.makeDirs(["results_test"])

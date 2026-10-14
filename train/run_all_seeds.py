@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-MODEL = "baseline"        # 'baseline', 'attention', 'mambaBot' 'mambaSup'
+MODEL = "baseline"        # any name in DfpNet.MODEL_CONFIGS: 'baseline', 'attention', 'mambaBot', 'mambaSup', 'C0'...'C4'
 RUN_NAME = "exp1"
 SEEDS = [42, 1955, 2003]
 BIG = 0 # 1= Big Dataset 
