@@ -229,6 +229,7 @@ MODEL_CONFIGS = {
     "halfMamba": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big"},
     "halfMambaPush": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "attention"},
     "MMM_AA": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big","out4":"attention","out5":"attention"},
+    "MMAA__": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "attention","out3":"attention"},
 
 }
 
