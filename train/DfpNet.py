@@ -224,15 +224,18 @@ STAGE_CHANNELS = {"in": None, "out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4
 MODEL_CONFIGS = {
     # Original variants, kept identical to reproduce previous runs and load their checkpoints
     "baseline":  {},
-    "mambaSup":  {"out2b": "vmamba_big"},
-    "fullMamba": { "out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_small", "out3": "vmamba_small", "out4": "vmamba_small", "out5": "vmamba_small"},
-    "halfMamba": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big"},
-    "halfMambaPush": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "attention"},
-    "MMM_AA": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big","out4":"attention","out5":"attention"},
-    "MMAA__": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "attention","out3":"attention"},
-    "MMMA__": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big","out3":"attention"},
-    "MM____": {"out1": "vmamba_big", "out2": "vmamba_big"},
-    "Mmm___": {"out1": "vmamba_big", "out2": "vmamba_small", "out2b": "vmamba_small"},
+    "mambaSup":  {"out2b": "vmamba_big"}, # Test
+    "fullMamba": { "out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_small", "out3": "vmamba_small", "out4": "vmamba_small", "out5": "vmamba_small"}, # Test, hard overfit
+    "halfMamba": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big"}, # Really good, looks like depth=3 is limit for usefulness
+    "halfMambaPush": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "attention"}, # Attention speeds up but has worse performance
+    "MMM_AA": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big","out4":"attention","out5":"attention"}, # Terrible, deep layers for attention are too hard to optimize
+    "MMAA__": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "attention","out3":"attention"}, # Bad, attention is less impactful even in layer 4
+    "MMMA__": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big","out3":"attention"}, # Attention has low impact in layer 4
+    "MM____": {"out1": "vmamba_big", "out2": "vmamba_big"}, # Good, slightly less powerful that MMM but slightly lower complexity
+    "Mmm___": {"out1": "vmamba_big", "out2": "vmamba_small", "out2b": "vmamba_small"}, # Bad, smaller mamba layers speed up only a little but lower performance
+    "MambaMentality": {"in":"vmamba_head","out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big"},
+    "MambaHead": {"out1": "vmamba_huge", "out2": "vmamba_big", "out2b": "vmamba_big"}
+
 }
 
 
@@ -293,9 +296,13 @@ class TurbNet(nn.Module):
             return
         in_channels = INPUT_CHANNELS if stage == "in" else self._channels * STAGE_CHANNELS[stage]
         if kind == "vmamba_big":
-            block = VMamba_Block(in_channels=in_channels,)
+            block = VMamba_Block(in_channels=in_channels)
         elif kind=="vmamba_small":
             block = VMamba_Block(in_channels=in_channels,mlp_ratio=2,ssm_ratio=1,ssm_d_state=8)
+        elif kind=="vmamba_head":
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32)
+        elif kind=="vmamba_huge":
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
         elif kind == "attention":
             block = MultiHeadSelfAttention2d(channels=in_channels, num_heads=self.num_heads, dropout=self.attention_dropout)
         else:
