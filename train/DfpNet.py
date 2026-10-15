@@ -227,7 +227,7 @@ MODEL_CONFIGS = {
     "mambaSup":  {"out2b": "vmamba_big"},
     "fullMamba": { "out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_small", "out3": "vmamba_small", "out4": "vmamba_small", "out5": "vmamba_small"},
     "halfMamba": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big"},
-        "halfMambaPush": {"out1": "vmamba", "out2": "vmamba", "out2b": "attention"},
+        "halfMambaPush": {"out1": "vmamba_big", "out2": "vmamba_big", "out2b": "attention"},
 }
 
 
