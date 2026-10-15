@@ -300,7 +300,7 @@ class TurbNet(nn.Module):
         elif kind=="vmamba_small":
             block = VMamba_Block(in_channels=in_channels,mlp_ratio=2,ssm_ratio=1,ssm_d_state=8)
         elif kind=="vmamba_head":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32)
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_conv=3)
         elif kind=="vmamba_huge":
             block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
         elif kind == "attention":
