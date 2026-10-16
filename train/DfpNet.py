@@ -258,7 +258,7 @@ MODEL_CONFIGS["HMdec_d2_d2b_d3"] = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2
 
 # Final configs
 MODEL_CONFIGS["HalfMamba"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3"}
-MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3","dout2":"vamba_decoder"}
+MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3","dout2":"vmamba_decoder"}
 
 
 class TurbNet(nn.Module):
@@ -332,13 +332,13 @@ class TurbNet(nn.Module):
         elif kind=="vmamba_huge":
             block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
         elif kind=="vmamba1":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
         elif kind=="vmamba2":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
         elif kind=="vmamba3":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
         elif kind=="vmamba_decoder":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=2)
         elif kind == "attention":
             block = MultiHeadSelfAttention2d(channels=in_channels, num_heads=self.num_heads, dropout=self.attention_dropout)
         else:
