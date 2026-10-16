@@ -258,11 +258,11 @@ MODEL_CONFIGS["HMdec_d2_d2b_d3"] = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2
 
 # Final configs
 MODEL_CONFIGS["HalfMamba"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3"}
-MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3","dout2":"vmamba_decoder"}
+MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3", "dout2": "vmamba_decoder"}
 
 
 class TurbNet(nn.Module):
-    def __init__(self, mixers=None, channelExponent=6, dropout=0., num_heads=8, attention_dropout=0.):
+    def __init__(self, mixers=None, channelExponent=6, dropout=0., num_heads=8, attention_dropout=0., mamba_cfg=None):
         super(TurbNet, self).__init__()
         channels = int(2 ** channelExponent + 0.5)
         mixers = dict(mixers or {})
@@ -272,7 +272,18 @@ class TurbNet(nn.Module):
         self.num_heads = num_heads
         self.attention_dropout = attention_dropout
 
-        # module name per stage: "layer_<type>" (as in the original variants), "layer_<type>_<stage>" if the type is used more than once
+        default_cfg = {
+            "vmamba1":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
+            "vmamba2":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
+            "vmamba3":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
+            "vmamba_decoder": {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
+        }
+        if mamba_cfg:
+            for k, v in mamba_cfg.items():
+                if k in default_cfg and v is not None:
+                    default_cfg[k].update(v)
+        self.mamba_cfg = default_cfg
+
         kinds = list(mixers.values())
         self.mixer_names = {
             stage: f"layer_{kind}" if kinds.count(kind) == 1 else f"layer_{kind}_{stage}"
@@ -281,8 +292,6 @@ class TurbNet(nn.Module):
         self._mixers = mixers
         self._channels = channels
 
-        # modules are registered in forward order (mixers right after their stage) so that, with the same seed,
-        # the weight initialization matches the original TurbNetG / TurbNetMambaSup / TurbNetMambaBot / TurbNetAttention
         self._add_mixer("in")
         self.layer1 = nn.Sequential()
         self.layer1.add_module('layer1_conv', nn.Conv2d(3, channels, 4, 2, 1, bias=True))
@@ -294,7 +303,7 @@ class TurbNet(nn.Module):
         self._add_mixer("out2b")
         self.layer3 = blockUNet(channels*2, channels*4, 'layer3', transposed=False, bn=True,  relu=False, dropout=dropout )
         self._add_mixer("out3")
-        self.layer4 = blockUNet(channels*4, channels*8, 'layer4', transposed=False, bn=True,  relu=False, dropout=dropout ,  size=4 ) # note, size 4!
+        self.layer4 = blockUNet(channels*4, channels*8, 'layer4', transposed=False, bn=True,  relu=False, dropout=dropout ,  size=4 )
         self._add_mixer("out4")
         self.layer5 = blockUNet(channels*8, channels*8, 'layer5', transposed=False, bn=True,  relu=False, dropout=dropout , size=2,pad=0)
         self._add_mixer("out5")
@@ -325,20 +334,20 @@ class TurbNet(nn.Module):
         in_channels = INPUT_CHANNELS if stage == "in" else self._channels * STAGE_CHANNELS[stage]
         if kind == "vmamba_big":
             block = VMamba_Block(in_channels=in_channels)
-        elif kind=="vmamba_small":
-            block = VMamba_Block(in_channels=in_channels,mlp_ratio=2,ssm_ratio=1,ssm_d_state=8)
-        elif kind=="vmamba_head":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_conv=3)
-        elif kind=="vmamba_huge":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
-        elif kind=="vmamba1":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
-        elif kind=="vmamba2":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
-        elif kind=="vmamba3":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
-        elif kind=="vmamba_decoder":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=24,ssm_ratio=2,mlp_ratio=6)
+        elif kind == "vmamba_small":
+            block = VMamba_Block(in_channels=in_channels, mlp_ratio=2, ssm_ratio=1, ssm_d_state=8)
+        elif kind == "vmamba_head":
+            block = VMamba_Block(in_channels=in_channels, ssm_d_state=32, ssm_conv=3)
+        elif kind == "vmamba_huge":
+            block = VMamba_Block(in_channels=in_channels, ssm_d_state=32, ssm_ratio=4, mlp_ratio=8)
+        elif kind in ("vmamba1", "vmamba2", "vmamba3", "vmamba_decoder"):
+            cfg = self.mamba_cfg[kind]
+            block = VMamba_Block(
+                in_channels=in_channels,
+                ssm_d_state=int(cfg["ssm_d_state"]),
+                ssm_ratio=float(cfg["ssm_ratio"]),
+                mlp_ratio=float(cfg["mlp_ratio"]),
+            )
         elif kind == "attention":
             block = MultiHeadSelfAttention2d(channels=in_channels, num_heads=self.num_heads, dropout=self.attention_dropout)
         else:
@@ -374,7 +383,7 @@ class TurbNet(nn.Module):
         return dout1
 
 
-def build_model(model_type, channelExponent=6, dropout=0.):
+def build_model(model_type, channelExponent=6, dropout=0., mamba_cfg=None):
     if model_type not in MODEL_CONFIGS:
         raise ValueError(f"Unknown Model: {model_type}. Available: {list(MODEL_CONFIGS)}")
-    return TurbNet(MODEL_CONFIGS[model_type], channelExponent=channelExponent, dropout=dropout)
+    return TurbNet(MODEL_CONFIGS[model_type], channelExponent=channelExponent, dropout=dropout, mamba_cfg=mamba_cfg)

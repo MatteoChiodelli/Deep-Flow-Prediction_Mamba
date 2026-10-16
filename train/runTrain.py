@@ -48,6 +48,22 @@ saveL1 = False
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
 run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
 seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
+tuning_dir = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "default" else None
+
+mamba_cfg = None
+extra_args = sys.argv[5:]
+if len(extra_args) in (9, 12):
+    vals = [float(x) if '.' in x else int(x) for x in extra_args]
+    mamba_cfg = {
+        "vmamba1": {"ssm_d_state": vals[0], "ssm_ratio": vals[1], "mlp_ratio": vals[2]},
+        "vmamba2": {"ssm_d_state": vals[3], "ssm_ratio": vals[4], "mlp_ratio": vals[5]},
+        "vmamba3": {"ssm_d_state": 16,      "ssm_ratio": 2,       "mlp_ratio": 4},
+    }
+    mamba_cfg["vmamba3"] = {"ssm_d_state": vals[6], "ssm_ratio": vals[7], "mlp_ratio": vals[8]}
+    if len(vals) == 12:
+        mamba_cfg["vmamba_decoder"] = {"ssm_d_state": vals[9], "ssm_ratio": vals[10], "mlp_ratio": vals[11]}
+elif len(extra_args) > 0:
+    raise ValueError(f"Pass 9 or 12 hyperparametrers: {len(extra_args)}")
 
 if seed_arg is not None:
     seed = seed_arg
@@ -87,7 +103,8 @@ epochs = int(iterations/len(trainLoader) + 0.5)
 if epochs < 1:
     epochs = 1
 
-netG = build_model(model_type, channelExponent=expo, dropout=dropout)
+netG = build_model(model_type, channelExponent=expo, dropout=dropout, mamba_cfg=mamba_cfg)
+
 #///////////////////////////////////////////////////////////////////////////////
 print(netG) # print full net
 model_parameters = filter(lambda p: p.requires_grad, netG.parameters())
@@ -117,6 +134,13 @@ inputs  = inputs.cuda()
 ################################################################################
 is_small = True  #HERE
 suffix_str = "_small" if is_small else ""   
+
+if tuning_dir:
+    metrics_dir = os.path.join("metrics", tuning_dir, run_name)
+else:
+    metrics_dir = os.path.join("metrics", model_type, f"{model_type}_{run_name}_s{seed}{suffix_str}")
+
+os.makedirs(metrics_dir, exist_ok=True)
 
 metrics_dir = os.path.join("metrics", model_type, f"{model_type}_{run_name}_s{seed}{suffix_str}")
 os.makedirs(metrics_dir, exist_ok=True)
@@ -294,9 +318,10 @@ for epoch in range(epochs):
     history_val_loss.append(epoch_val_loss)
 
 #///////////////////////////////////////////////////////////////////////////////
-torch.save(netG.state_dict(), prefix + "modelG" )
 
+torch.save(netG.state_dict(), os.path.join(metrics_dir, prefix + "modelG"))
 ################################################################################
+
 plt.figure(figsize=(9, 5))
 plt.plot(range(1, epochs + 1), history_train_loss, label="Train Loss (L1)", color="#1f77b4", linewidth=2)
 plt.plot(range(1, epochs + 1), history_val_loss, label="Validation Loss (L1)", color="#ff7f0e", linestyle="--", linewidth=2)
