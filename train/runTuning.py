@@ -13,7 +13,7 @@ from DfpNet import build_model
 
 
 MODEL_TYPE   = "HalfMamba_Augmented"      # "HalfMamba" (9 params: 3x3) or "HalfMamba_Augmented" (12 params: 3x4)
-TUNING_LAYER = "vmamba_decoder"        # "vmamba1", "vmamba2", "vmamba3", or "vmamba_decoder"
+TUNING_LAYER = "all_layers"        # "vmamba1", "vmamba2", "vmamba3", or "vmamba_decoder"
 SEED         = 42
 EXPO         = 5              
 
@@ -24,8 +24,20 @@ EXPERIMENTS = [
     [16, 2, 4,   16, 2, 4,   16, 2, 4,   12, 2, 3],
     [16, 2, 4,   16, 2, 4,   16, 2, 4,   16, 1, 2],
     [16, 2, 4,   16, 2, 4,   16, 2, 4,   24 ,2, 2],
+    [16, 2, 4,   16, 2, 4,   16, 2, 4,   32 ,2, 4],
 
 
+    [12, 2, 3,   16, 2, 4,   16, 2, 4,   16 ,2, 4],
+    [16, 4, 4,   16, 2, 4,   16, 2, 4,   16 ,2, 4],
+    [24, 3, 4,   16, 2, 4,   16, 2, 4,   16 ,2, 4],
+
+    [16, 2, 4,   32, 2, 2,   16, 2, 4,   16 ,2, 4],
+    [16, 2, 4,   24, 2, 4,   16, 2, 4,   16 ,2, 4],
+    [16, 2, 4,   12, 2, 3,   16, 2, 4,   16 ,2, 4],
+
+    [16, 2, 4,   16, 2, 4,   32, 2, 2,   16 ,2, 4],
+    [16, 2, 4,   16, 2, 4,   12, 2, 3,   16 ,2, 4],
+    [16, 2, 4,   16, 2, 4,   24, 2, 2,   16 ,2, 4],
 ]
 
 
@@ -34,10 +46,10 @@ LAYER_INDEX_MAP = {
     "vmamba2": 3,
     "vmamba3": 6,
     "vmamba_decoder": 9,
+    "all_layers":0,
 }
 
 def fmt_num(x):
-    """Formatta int/float senza '.0' superflui."""
     return str(int(x)) if float(x).is_integer() else str(x)
 
 def params_to_mamba_cfg(params):
@@ -109,18 +121,22 @@ def main():
     seen_counts = {}
 
     print("=" * 80)
-    print(f"AVVIO TUNING AUTOMATICO | Modello: {MODEL_TYPE} | Layer Target: {TUNING_LAYER} | Seed: {SEED}")
-    print(f"Cartella di output: {tuning_base_dir}")
-    print(f"Totale combinazioni da eseguire: {len(EXPERIMENTS)}")
+    print(f"ACITVATING AUTO TRAIN | Modello: {MODEL_TYPE} | Layer Target: {TUNING_LAYER} | Seed: {SEED}")
+    print(f"Output Folder: {tuning_base_dir}")
+    print(f"Total number of combinations: {len(EXPERIMENTS)}")
     print("=" * 80)
-
+    i=0
     for idx, params in enumerate(EXPERIMENTS, 1):
+        i=i+1
         mamba_cfg = params_to_mamba_cfg(params)
-        row_name = get_row_name(MODEL_TYPE, TUNING_LAYER, params, seen_counts)
+        if TUNING_LAYER!='all_layers':
+            row_name = get_row_name(MODEL_TYPE, TUNING_LAYER, params, seen_counts)
+            
+        else:
+            row_name="Combination_{i}"
         params_str = count_params_millions(MODEL_TYPE, EXPO, mamba_cfg)
-        
-        print(f"\n>>> [{idx}/{len(EXPERIMENTS)}] Avvio Run: {row_name} ({params_str})")
-        print(f"    Configurazione completa: {params}")
+        print(f"\n>>> [{idx}/{len(EXPERIMENTS)}] Starting Run: {row_name} ({params_str})")
+        print(f"    Configuration Done: {params}")
 
         cmd = [
             sys.executable, "runTrain.py",
@@ -134,7 +150,7 @@ def main():
         
         run_metrics_csv = os.path.join(tuning_base_dir, row_name, "metrics_train.csv")
         if result.returncode != 0 or not os.path.exists(run_metrics_csv):
-            print(f"[ERRORE] La run {row_name} è fallita o non ha generato {run_metrics_csv}. Salto al prossimo...")
+            print(f"[ERROR] Run {row_name} failerd o did not generate {run_metrics_csv}. Going next...")
             continue
 
         row_summary = summarize_run_csv(run_metrics_csv, row_name, params_str, BASELINE_VAL_ERR_PCT)
@@ -156,10 +172,10 @@ def main():
             for r in summary_rows:
                 writer.writerow({k: r[k] for k in fieldnames})
 
-        print(f"<<< [{idx}/{len(EXPERIMENTS)}] Completata {row_name}: Val(20)={row_summary['val_error_last20_pct']} | Peak={row_summary['peak_val_error_pct']} | Impr={row_summary['improvement_vs_baseline_pct']}")
+        print(f"<<< [{idx}/{len(EXPERIMENTS)}] Completated {row_name}: Val(20)={row_summary['val_error_last20_pct']} | Peak={row_summary['peak_val_error_pct']} | Impr={row_summary['improvement_vs_baseline_pct']}")
 
     print("\n" + "=" * 80)
-    print(f"TUNING COMPLETATO! Riepilogo salvato in: {summary_csv_path}")
+    print(f"TUNING COMPLETE! Riepilogo salvato in: {summary_csv_path}")
     print("=" * 80)
     if summary_rows:
         df_out = pd.DataFrame(summary_rows).drop(columns=["_sort_key"])
