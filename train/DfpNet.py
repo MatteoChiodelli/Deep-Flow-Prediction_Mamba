@@ -256,6 +256,11 @@ MODEL_CONFIGS["HMdec_d2_d2b"]   = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2b
 MODEL_CONFIGS["HMdec_d2_d2b_d3"] = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2b": "vmamba_big", "dout3": "vmamba_big"}  # full mirror (+16x16)
 
 
+# Final configs
+MODEL_CONFIGS["HalfMamba"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3"}
+MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3","dout2":"vamba_decoder"}
+
+
 class TurbNet(nn.Module):
     def __init__(self, mixers=None, channelExponent=6, dropout=0., num_heads=8, attention_dropout=0.):
         super(TurbNet, self).__init__()
@@ -325,6 +330,14 @@ class TurbNet(nn.Module):
         elif kind=="vmamba_head":
             block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_conv=3)
         elif kind=="vmamba_huge":
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+        elif kind=="vmamba1":
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+        elif kind=="vmamba2":
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+        elif kind=="vmamba3":
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+        elif kind=="vmamba_decoder":
             block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
         elif kind == "attention":
             block = MultiHeadSelfAttention2d(channels=in_channels, num_heads=self.num_heads, dropout=self.attention_dropout)
