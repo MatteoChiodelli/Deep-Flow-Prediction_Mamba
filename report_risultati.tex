@@ -1,0 +1,263 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[italian]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\cfg}[1]{\texttt{#1}}
+\newcommand{\best}[1]{\textbf{#1}}
+\setlist{itemsep=2pt}
+
+\title{Report risultati -- TurbNet + Mamba / Self-Attention}
+\author{}
+\date{Aggiornato al 15/10/2026 \\ \small Fonte: \texttt{train/metrics/}, storia git di \texttt{train/DfpNet.py}}
+
+\begin{document}
+\maketitle
+
+\section*{Sintesi}
+
+\begin{itemize}
+  \item \textbf{Il guadagno è reale e non è spiegato dal numero di parametri.} Un singolo blocco V-Mamba dopo \cfg{out1} ($64\times64$) aggiunge solo \textbf{+1,2\% di parametri} e riduce la validation loss del \textbf{$\sim$9\%} rispetto alla baseline. Su tutti i modelli la correlazione tra parametri e validation loss è \textbf{nulla} (Pearson $r \approx 0{,}00$). Nello sweep di posizione, anzi, \textbf{più parametri $\rightarrow$ loss peggiore}.
+  \item \textbf{I migliori:} \cfg{MMM\_AA} e \cfg{halfMamba} ($-11\%$ di val loss) e \cfg{M\_out1} ($-9\%$ con quasi zero parametri in più). Tutte le migliori configurazioni hanno \textbf{Mamba ad alta risoluzione (\cfg{out1})}.
+  \item \textbf{I peggiori:} Mamba o attention nel \textbf{bottleneck} (\cfg{M\_out4}, \cfg{mambaSup}, attention bottleneck originale) danno un miglioramento \textbf{indistinguibile dal rumore}. Un blocco di attention a \cfg{out3} \textbf{peggiora} le architetture ibride.
+  \item \textbf{Limite principale:} quasi tutti i risultati sono a \textbf{1 seed} e solo sulla \textbf{validazione}. Il test set è stato valutato solo per la baseline. Le conclusioni vanno confermate con 3 seed e con il test (Sez.~\ref{sec:futuri}).
+  \item L'errore sulla \textbf{pressione} ($\sim$9,5\% val, $\sim$14,5\% test) è la componente dominante e \textbf{nessuna architettura la migliora in modo significativo}: i guadagni sono su $v_x$ e soprattutto $v_y$.
+\end{itemize}
+
+\section{Setup sperimentale}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+Voce & Valore \\
+\midrule
+Dataset & \cfg{data\_6k} (6400 campioni) $\rightarrow$ 6000 train / 400 validazione; test: 90 campioni \\
+Rete & TurbNet (U-Net di Thuerey et al.), \cfg{expo = 5} $\rightarrow$ 32 canali base, $\sim$2,33\,M parametri \\
+Training & 150 epoche (90k iterazioni), batch 10, Adam lr $6\cdot10^{-4}$ con decay, AMP (fp16) \\
+Seed & baseline e \cfg{mambaSup}: 42/1955/2003; \textbf{tutto il resto: solo 42} \\
+Metrica principale & L1 loss di validazione (normalizzata) all'ultima epoca; errori relativi \% su $p$, $v_x$, $v_y$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Modifiche apportate al codice (storia git)}
+
+\begin{enumerate}
+  \item \textbf{\cfg{TurbNet} configurabile} (\cfg{DfpNet.py}): la U-Net originale con ``mixer'' opzionali dopo ogni stage dell'encoder. Il mixer sostituisce l'output dello stage sia verso il layer successivo sia nella skip connection. I tipi di mixer sono:
+  \begin{itemize}
+    \item \cfg{vmamba\_big}: VSSBlock con d\_state 16, ssm\_ratio 2, mlp\_ratio 4;
+    \item \cfg{vmamba\_small}: d\_state 8, ssm\_ratio 1, mlp\_ratio 2;
+    \item \cfg{attention}: MHSA con 8 teste, LayerNorm e residual.
+  \end{itemize}
+  \item \textbf{Kernel della conv locale di Mamba (\cfg{ssm\_conv})}: $3 \rightarrow 2 \rightarrow 1$ (commit \cfg{de207ab}, \cfg{a128172} del 14/10). \textbf{Attenzione:} \cfg{mambaSup\_exp1} è stato allenato \emph{prima} di questa modifica (presumibilmente \cfg{ssm\_conv=3}, 2.421.187 parametri contro 2.419.907 di oggi). Non è quindi perfettamente confrontabile con \cfg{M\_out2b}, che oggi ha la stessa posizione.
+  \item Architetture aggiunte nel tempo: \cfg{mambaSup}, \cfg{fullMamba}, \cfg{halfMamba}, \cfg{halfMamba\_lightconv1}, \cfg{halfMambaPush}, \cfg{MMM\_AA}, \cfg{MMAA\_\_}, \cfg{MMMA\_\_}.
+  \item \textbf{Sweep di posizione} (nuovo): \cfg{M\_out1}\dots\cfg{M\_out5}, un solo blocco \cfg{vmamba\_big} per run (\cfg{run\_mamba\_position.sh}). Lo stesso sweep con attention, \cfg{A\_out1}\dots\cfg{A\_out5} (\cfg{run\_attention\_position.sh}), \textbf{è in corso}.
+\end{enumerate}
+
+\section{Risultati completi}
+
+La Tabella~\ref{tab:risultati} riporta i risultati di validazione, ordinati per val loss. I $\Delta$ sono calcolati rispetto alla media della baseline sui 3 seed (val loss 0,003657; $p$ 9,60\%; $v_x$ 1,10\%; $v_y$ 4,31\%).
+
+\begin{table}[h]
+\centering
+\caption{Risultati di validazione di tutti i modelli (ordinati per val loss).}
+\label{tab:risultati}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}rllrrrrrrrrr@{}}
+\toprule
+\# & Modello & Mixer (stage $\rightarrow$ tipo) & Param. & $\Delta$ param & Val loss & $\Delta$ loss & Err $p$ \% & Err $v_x$ \% & Err $v_y$ \% & s/epoca & VRAM MB \\
+\midrule
+1 & \cfg{MMM\_AA} & out1,2,2b: Mamba $\cdot$ out4,5: Attn & 3,06\,M & +31\% & \best{0,00324} & \best{$-11{,}4\%$} & 9,41 & \best{0,99} & 3,79 & 25,4 & 527 \\
+2 & \cfg{halfMamba\_lightconv1} & out1,2,2b: Mamba & 2,54\,M & +9\% & \best{0,00324} & \best{$-11{,}4\%$} & \best{9,37} & \best{0,99} & \best{3,77} & 23,4 & 501 \\
+3 & \cfg{halfMamba} & out1,2,2b: Mamba & 2,54\,M & +9\% & 0,00329 & $-10{,}0\%$ & 9,55 & 1,00 & 3,90 & 23,8 & 507 \\
+4 & \cfg{halfMambaPush} & out1,2: Mamba $\cdot$ out2b: Attn & 2,47\,M & +6\% & 0,00331 & $-9{,}5\%$ & 9,55 & 1,01 & 3,90 & 21,4 & 417 \\
+5 & \best{\cfg{M\_out1}} & out1: Mamba & \best{2,36\,M} & \best{+1,2\%} & 0,00332 & $-9{,}2\%$ & 9,52 & 1,00 & 3,98 & 15,3 & 386 \\
+6 & \cfg{fullMamba} & out1,2: Mamba big $\cdot$ out2b--5: Mamba small & 3,66\,M & +57\% & 0,00343 & $-6{,}2\%$ & 9,88 & 1,04 & 4,07 & 35,2 & 516 \\
+7 & \cfg{MMAA\_\_} & out1,2: Mamba $\cdot$ out2b,3: Attn & 2,53\,M & +9\% & 0,00349 & $-4{,}6\%$ & 9,88 & 1,07 & 4,12 & 22,8 & 499 \\
+8 & \cfg{M\_out2b} & out2b: Mamba & 2,42\,M & +4\% & 0,00349 & $-4{,}6\%$ & 9,74 & 1,04 & 4,36 & 12,9 & 202 \\
+9 & \cfg{M\_out3} & out3: Mamba & 2,63\,M & +13\% & 0,00353 & $-3{,}5\%$ & 10,12 & 1,04 & 4,38 & 12,8 & 205 \\
+10 & \cfg{M\_out5} & out5: Mamba & 3,42\,M & +47\% & 0,00353 & $-3{,}5\%$ & 9,94 & 1,05 & 4,35 & 12,7 & 210 \\
+11 & \cfg{M\_out2} & out2: Mamba & 2,42\,M & +4\% & 0,00354 & $-3{,}2\%$ & 9,91 & 1,05 & 4,45 & 13,0 & 270 \\
+12 & \cfg{MMMA\_\_} & out1,2,2b: Mamba $\cdot$ out3: Attn & 2,60\,M & +12\% & 0,00357 & $-2{,}4\%$ & 10,26 & 1,09 & 4,18 & 25,1 & 517 \\
+13 & \cfg{mambaSup} (3 seed) & out2b: Mamba (ssm\_conv=3) & 2,42\,M & +4\% & $0{,}00359 \pm 0{,}00014$ & $-1{,}7\%$ & $9{,}51 \pm 0{,}20$ & 1,08 & 4,21 & -- & -- \\
+14 & \cfg{M\_out4} & out4: Mamba & 3,42\,M & +47\% & 0,00360 & $-1{,}6\%$ & 10,18 & 1,08 & 4,43 & 13,0 & 127 \\
+15 & attention bottleneck$^{1}$ & bottleneck: Attn & $\sim$2,6\,M & -- & $\sim$0,00365 & $\sim$0\% & -- & -- & -- & -- & -- \\
+16 & \best{\cfg{baseline}} (3 seed) & -- & 2,33\,M & -- & $0{,}00366 \pm 0{,}00002$ & -- & $9{,}60 \pm 0{,}41$ & $1{,}10 \pm 0{,}01$ & $4{,}31 \pm 0{,}13$ & n.d. & n.d. \\
+\bottomrule
+\end{tabular}}
+
+\vspace{4pt}
+\begin{minipage}{\textwidth}
+\footnotesize $^{1}$ Vecchie run (2 seed completi) del 13/10, cancellate dalla cartella \cfg{metrics} (commit \cfg{014ad07}) e recuperate da git; il seed 42 si era fermato all'epoca 39.
+\end{minipage}
+\end{table}
+
+\paragraph{Test set (solo baseline, 3 seed).} Errore $p$ $14{,}50 \pm 0{,}58\%$, velocità $2{,}42 \pm 0{,}12\%$, aggregato $2{,}92 \pm 0{,}14\%$. Nessun altro modello è stato testato.
+
+\paragraph{Sweep attention (in corso).} \cfg{A\_out1} è all'epoca $\sim$17/150. A metà training la val loss è ancora alta (0,0082) e non si può giudicare. Il fatto rilevante per ora è il \textbf{costo}: 105\,s/epoca e \textbf{10,3\,GB di VRAM}, contro 15\,s e 386\,MB di \cfg{M\_out1} nella stessa posizione (vedi Sez.~\ref{sec:costo}).
+
+\section{Migliori e peggiori}
+
+\subsection*{Migliori}
+\begin{enumerate}
+  \item \textbf{\cfg{MMM\_AA} / \cfg{halfMamba\_lightconv1}}: val loss 0,00324 ($-11{,}4\%$), errori più bassi su $v_x$ ($-10\%$) e $v_y$ ($-12\%$).
+  \item \textbf{\cfg{halfMamba}, \cfg{halfMambaPush}, \cfg{M\_out1}}: tutti tra $-9\%$ e $-10\%$.
+  \item \textbf{Miglior rapporto prestazioni/costo: \cfg{M\_out1}.} Ottiene circa l'80\% del guadagno di \cfg{MMM\_AA} con +28k parametri invece di +732k. È anche la più veloce tra le top-5 (15\,s/epoca contro 21--25).
+\end{enumerate}
+
+\cfg{halfMamba} e \cfg{halfMamba\_lightconv1}, con la stessa configurazione nel codice attuale, differiscono di 0,00005. È una stima diretta del rumore single-seed, e i primi 5 della classifica sono \textbf{statisticamente indistinguibili tra loro}.
+
+\subsection*{Peggiori}
+\begin{enumerate}
+  \item \textbf{Blocchi nel bottleneck:} \cfg{M\_out4} ($-1{,}6\%$ con \textbf{+47\%} di parametri), \cfg{mambaSup} ($-1{,}7\%$) e l'attention bottleneck originale ($\sim$0\%). Sono tutti nel range del rumore.
+  \item \textbf{Attention a \cfg{out3} nelle ibride:}
+  \begin{itemize}
+    \item \cfg{MMMA\_\_} = \cfg{halfMamba} + Attn@out3 $\rightarrow$ da $-10{,}0\%$ a $\mathbf{-2{,}4\%}$;
+    \item \cfg{MMAA\_\_} = \cfg{halfMambaPush} + Attn@out3 $\rightarrow$ da $-9{,}5\%$ a $-4{,}6\%$.
+  \end{itemize}
+  Aggiungere attention a \cfg{out3} \textbf{distrugge} gran parte del guadagno.
+  \item \textbf{\cfg{fullMamba}:} +57\% di parametri, la più lenta (35\,s/epoca), e peggiore di \cfg{halfMamba}. I blocchi Mamba profondi (\cfg{vmamba\_small} da out2b a out5) non aiutano, anzi peggiorano.
+\end{enumerate}
+
+\section{Sweep di posizione del singolo blocco Mamba}
+
+\begin{table}[h]
+\centering
+\caption{Un solo blocco \cfg{vmamba\_big}, spostato da \cfg{out1} a \cfg{out5} (seed 42).}
+\label{tab:sweep}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule
+Posizione & Risoluzione & $\Delta$ param & Val loss (ultima) & Media ultime 10 epoche & $\Delta$ loss \\
+\midrule
+\best{out1} & $64\times64$ & +1,2\% & \best{0,00332} & \best{0,00335} & \best{$-9{,}2\%$} \\
+out2 & $32\times32$ & +3,8\% & 0,00354 & 0,00352 & $-3{,}2\%$ \\
+out2b & $16\times16$ & +3,8\% & 0,00349 & 0,00353 & $-4{,}6\%$ \\
+out3 & $8\times8$ & +12,8\% & 0,00353 & 0,00350 & $-3{,}5\%$ \\
+out4 & $4\times4$ & +46,7\% & 0,00360 & 0,00360 & $-1{,}6\%$ \\
+out5 & $2\times2$ & +46,7\% & 0,00353 & 0,00353 & $-3{,}5\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}
+  \item \textbf{Lo stage conta molto più dei parametri.} Solo a \cfg{out1} il guadagno è chiaramente sopra il rumore. Da \cfg{out2} in giù tutte le posizioni stanno in una fascia di $-2/-5\%$, compatibile con la variabilità tra seed.
+  \item Il risultato è \textbf{coerente con RQ2}: la scansione selettiva di Mamba serve dove la sequenza è lunga (4096 token a $64\times64$) e le convoluzioni hanno un campo recettivo locale. Su 4--16 token (RQ3, bottleneck) le convoluzioni catturano già il contesto globale e Mamba non aggiunge nulla.
+  \item Si spiega anche perché tutte le ibride migliori contengono Mamba a \cfg{out1}: \textbf{il ``motore'' del miglioramento è quel blocco}. Gli stage \cfg{out2}/\cfg{out2b} aggiungono al massimo un $\sim$1--2\% marginale (da \cfg{M\_out1} $-9{,}2\%$ a \cfg{halfMamba} $-10/-11\%$).
+\end{itemize}
+
+\section{Miglioramento reale o solo più parametri?}
+
+\textbf{Conclusione: il miglioramento è architetturale, non dovuto alla capacità.} Le evidenze:
+
+\begin{enumerate}
+  \item \textbf{Nessuna correlazione tra parametri e loss su tutti i 14 modelli.} Pearson $r = -0{,}004$ ($p = 0{,}99$), Spearman $\rho = -0{,}15$ ($p = 0{,}62$).
+  \item \textbf{Nello sweep di posizione la correlazione è al contrario} (Spearman $\rho = +0{,}72$, cioè più parametri $\rightarrow$ loss più alta). Le posizioni più costose (\cfg{out4}/\cfg{out5}, +1,09\,M parametri, +47\%) sono tra le peggiori, mentre la più economica (\cfg{out1}, +28k) è la migliore.
+  \item \textbf{Confronti a parità (quasi) di parametri} (Tabella~\ref{tab:parita}).
+\end{enumerate}
+
+\begin{table}[h]
+\centering
+\caption{Confronti diretti tra modelli con numero di parametri simile o noto.}
+\label{tab:parita}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lll@{}}
+\toprule
+Coppia & Parametri & Val loss \\
+\midrule
+\cfg{M\_out2} vs \cfg{M\_out2b} vs \cfg{mambaSup} & identici (2,42\,M) & 0,00354 / 0,00349 / 0,00359 $\rightarrow$ nessuna differenza \\
+\cfg{M\_out1} vs \cfg{M\_out2} & 2,36\,M vs 2,42\,M & \best{0,00332} vs 0,00354 $\rightarrow$ il modello più piccolo vince \\
+\cfg{M\_out1} vs \cfg{M\_out4} & 2,36\,M vs 3,42\,M & \best{0,00332} vs 0,00360 $\rightarrow$ 1\,M parametri in meno, $-8\%$ di loss \\
+\cfg{MMM\_AA} vs \cfg{halfMamba} & 3,06\,M vs 2,54\,M & 0,00324 vs 0,00329 $\rightarrow$ +0,53\,M parametri per un guadagno sotto il rumore \\
+\cfg{fullMamba} vs \cfg{halfMamba} & 3,66\,M vs 2,54\,M & 0,00343 vs 0,00329 $\rightarrow$ più parametri, peggio \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{enumerate}[resume]
+  \item \textbf{Vincolo di iso-capacità (README):} \cfg{M\_out1} (+1,2\%), \cfg{halfMambaPush} (+5,7\%) e \cfg{halfMamba} (+8,8\%) lo rispettano e restano tra i migliori. \cfg{MMM\_AA} (+31\%) e \cfg{fullMamba} (+57\%) \textbf{no}. Quindi il ``primo posto'' di \cfg{MMM\_AA} non va considerato una vittoria pulita.
+\end{enumerate}
+
+\paragraph{Cosa manca per una prova definitiva.} Un \textbf{controllo a parità di parametri senza Mamba}. Esempi: baseline leggermente più larga, oppure baseline con un blocco convoluzionale residuo a \cfg{out1} da $\sim$28k parametri (Sez.~\ref{sec:futuri}, punto 2). Se questo controllo non raggiunge il $-9\%$, il beneficio è attribuibile alla scansione selettiva e non alla capacità né alla profondità extra.
+
+\subsection*{Rumore e significatività}
+\begin{itemize}
+  \item Deviazione standard tra seed: baseline 0,000023 (0,6\%), \cfg{mambaSup} 0,00014 (3,9\%). La stima della baseline è probabilmente ottimistica, perché 3 seed sono pochi.
+  \item Adottando un margine prudente di $\pm4\%$:
+  \begin{itemize}
+    \item guadagni $\geq 9\%$ (\cfg{out1}, \cfg{halfMamba*}, \cfg{MMM\_AA}): \textbf{probabilmente reali};
+    \item guadagni $\leq 5\%$ (sweep da out2 a out5, \cfg{MMAA\_\_}, \cfg{MMMA\_\_}, \cfg{mambaSup}): \textbf{non distinguibili dal rumore}.
+  \end{itemize}
+  \item Il guadagno è concentrato sulla \textbf{velocità} ($v_y$ da 4,31 a 3,77--3,98\%, cioè $\sim3\sigma$; $v_x$ da 1,10 a 0,99\%). Sulla \textbf{pressione} il migliore (9,37\%) è entro una deviazione standard dalla baseline ($9{,}60 \pm 0{,}41\%$).
+\end{itemize}
+
+\section{Costo computazionale}
+\label{sec:costo}
+
+\begin{itemize}
+  \item \textbf{Mamba scala bene in alta risoluzione:} \cfg{M\_out1} costa 15\,s/epoca e 386\,MB.
+  \item \textbf{L'attention in alta risoluzione no:} \cfg{A\_out1} costa 105\,s/epoca ($\times7$) e 10,3\,GB ($\times27$).
+  \item \textbf{Causa verificata:} in AMP (fp16), con 32 canali / 8 teste, \cfg{head\_dim = 4}. Le kernel efficienti di \cfg{scaled\_dot\_product\_attention} non vengono usate e PyTorch materializza l'intera matrice di attention $4096\times4096$. Un test isolato in fp32 usava solo $\sim$250\,MB.
+\end{itemize}
+
+Per i confronti futuri con l'attention ad alta risoluzione va sistemato questo punto (Sez.~\ref{sec:futuri}, punto 6), altrimenti il confronto di efficienza Mamba vs attention è distorto.
+
+\section{Sviluppi futuri}
+\label{sec:futuri}
+
+Ordinati per priorità:
+
+\begin{enumerate}
+  \item \textbf{Confermare i risultati.}
+  \begin{itemize}
+    \item Rilanciare con 3 seed (42/1955/2003) almeno \cfg{M\_out1}, \cfg{halfMamba}, \cfg{halfMambaPush} e \cfg{MMM\_AA} (con \cfg{run\_all\_seeds.py}).
+    \item Valutarli sul \textbf{test set} con \cfg{runTest.py}, dato che oggi è stato testato solo la baseline.
+    \item Senza questo passo le differenze tra i top-5 non sono interpretabili.
+  \end{itemize}
+  \item \textbf{Controllo a parità di parametri} (chiude la domanda della sezione precedente):
+  \begin{itemize}
+    \item \cfg{baseline} con \cfg{expo} non intero, dato che \cfg{channels = int(2**expo + 0.5)} lo permette (es. 33--34 canali);
+    \item oppure una baseline con un blocco conv $3\times3$ residuo a \cfg{out1} con $\sim$28k parametri, come \cfg{M\_out1}.
+  \end{itemize}
+  \item \textbf{Spingere ancora più in alta risoluzione}, visto che la risoluzione è il fattore chiave.
+  \begin{itemize}
+    \item Il codice supporta già lo stage \cfg{in} ($128\times128$) ma non è mai stato testato. A 3 canali il blocco è minuscolo, quindi probabilmente conviene una piccola stem conv prima.
+    \item Valutare Mamba anche nel \textbf{decoder} (es.\ su \cfg{dout2} o prima di \cfg{dlayer1}), dove si ricostruisce la scia.
+  \end{itemize}
+  \item \textbf{Scansioni non raster a \cfg{out1} (RQ6):} curva di Hilbert o scansione streamwise. Ha senso farlo proprio a \cfg{out1}, dove Mamba ha effetto. Lì le sequenze sono lunghe e la discontinuità della scansione raster pesa di più.
+  \item \textbf{Alleggerire i blocchi profondi.}
+  \begin{itemize}
+    \item \cfg{vmamba\_big} a 256 canali (\cfg{out4}/\cfg{out5}) costa 0,54\,M parametri, soprattutto per l'MLP con ratio 4, senza benefici.
+    \item Se servono mixer profondi, usare \cfg{vmamba\_small} o \cfg{mlp\_ratio} ridotto. In generale conviene evitare attention a \cfg{out3}.
+  \end{itemize}
+  \item \textbf{Sistemare l'attention per i confronti equi.} Usare \cfg{num\_heads = 4} a 32 canali (\cfg{head\_dim = 8}, che abilita le kernel efficienti in fp16), oppure tenere l'attention in fp32 o bf16. Va fatto prima di trarre conclusioni dallo sweep \cfg{A\_out*}.
+  \item \textbf{Attaccare l'errore sulla pressione}, oggi il collo di bottiglia ($\sim$9,5\% val, $\sim$14,5\% test):
+  \begin{itemize}
+    \item pesare di più il canale $p$ nella loss;
+    \item normalizzazione adimensionale (opzione già presente in \cfg{dataset.py});
+    \item loss con gradienti o termini fisici (es.\ divergenza della velocità).
+  \end{itemize}
+  \item \textbf{Training e protocollo.}
+  \begin{itemize}
+    \item Salvare il \textbf{checkpoint migliore} in validazione: oggi si salva l'ultimo, e diverse run hanno la best loss qualche epoca prima della fine.
+    \item Registrare tempo/epoca e VRAM anche per la baseline, che manca.
+    \item Allenare il modello finale sul \textbf{dataset completo} (README, Sez.~4).
+  \end{itemize}
+  \item \textbf{Pulizia e riproducibilità.}
+  \begin{itemize}
+    \item I risultati di \cfg{fullMamba} sono in \cfg{metrics/metrics\_train\_fullMamba.csv} invece che nella sua cartella, dove c'è un CSV vuoto. Lo stesso vale per \cfg{mambaSup\_debug}.
+    \item Riallenare \cfg{mambaSup} con \cfg{ssm\_conv=1} per allinearlo agli altri modelli.
+    \item Annotare in \cfg{MODEL\_CONFIGS} gli iperparametri di ogni run storica (es.\ cosa distingue \cfg{halfMamba\_lightconv1} da \cfg{halfMamba\_exp1}: dal codice attuale non si ricostruisce).
+  \end{itemize}
+\end{enumerate}
+
+\end{document}

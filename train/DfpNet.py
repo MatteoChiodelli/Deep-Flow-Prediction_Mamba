@@ -217,8 +217,11 @@ class MultiHeadSelfAttention2d(nn.Module):
 # Encoder stage outputs for a 128x128 input (channels as multiples of 2**channelExponent):
 #   in   128x128, 3 channels (network input, before layer1)
 #   out1  64x64 x1 | out2  32x32 x2 | out2b 16x16 x2 | out3  8x8 x4 | out4  4x4 x8 | out5  2x2 x8 | out6  1x1 x8
+# Decoder stage outputs (mixer applied before the concatenation with the skip connection):
+#   dout6 2x2 x8 | dout5 4x4 x8 | dout4 8x8 x4 | dout3 16x16 x2 | dout2b 32x32 x2 | dout2 64x64 x1
 INPUT_CHANNELS = 3
-STAGE_CHANNELS = {"in": None, "out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4": 8, "out5": 8, "out6": 8}
+STAGE_CHANNELS = {"in": None, "out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4": 8, "out5": 8, "out6": 8,
+                  "dout6": 8, "dout5": 8, "dout4": 4, "dout3": 2, "dout2b": 2, "dout2": 1}
 
 # model name -> {stage: mixer type}
 MODEL_CONFIGS = {
@@ -237,6 +240,19 @@ MODEL_CONFIGS = {
     "MambaHead": {"out1": "vmamba_huge", "out2": "vmamba_big", "out2b": "vmamba_big"}
 
 }
+
+# Position sweep: a single V-Mamba block (ssm_conv=1) after one encoder stage, from out1 to out5 (M_out1 ... M_out5)
+for _stage in ["out1", "out2", "out2b", "out3", "out4", "out5"]:
+    MODEL_CONFIGS[f"M_{_stage}"] = {_stage: "vmamba_big"}
+# Same sweep with a single self-attention block (A_out1 ... A_out5)
+for _stage in ["out1", "out2", "out2b", "out3", "out4", "out5"]:
+    MODEL_CONFIGS[f"A_{_stage}"] = {_stage: "attention"}
+
+# halfMamba (best model) + V-Mamba blocks in the high-resolution decoder stages, mirroring the encoder ones
+_HALF_MAMBA = MODEL_CONFIGS["halfMamba"]
+MODEL_CONFIGS["HMdec_d2"]       = {**_HALF_MAMBA, "dout2": "vmamba_big"}                                              # 64x64, mirror of out1
+MODEL_CONFIGS["HMdec_d2_d2b"]   = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2b": "vmamba_big"}                      # + 32x32
+MODEL_CONFIGS["HMdec_d2_d2b_d3"] = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2b": "vmamba_big", "dout3": "vmamba_big"}  # full mirror (+16x16)
 
 
 class TurbNet(nn.Module):
@@ -280,11 +296,17 @@ class TurbNet(nn.Module):
         self._add_mixer("out6")
 
         self.dlayer6 = blockUNet(channels*8, channels*8, 'dlayer6', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
+        self._add_mixer("dout6")
         self.dlayer5 = blockUNet(channels*16,channels*8, 'dlayer5', transposed=True, bn=True, relu=True, dropout=dropout , size=2,pad=0)
+        self._add_mixer("dout5")
         self.dlayer4 = blockUNet(channels*16,channels*4, 'dlayer4', transposed=True, bn=True, relu=True, dropout=dropout ) 
+        self._add_mixer("dout4")
         self.dlayer3 = blockUNet(channels*8, channels*2, 'dlayer3', transposed=True, bn=True, relu=True, dropout=dropout )
+        self._add_mixer("dout3")
         self.dlayer2b= blockUNet(channels*4, channels*2, 'dlayer2b',transposed=True, bn=True, relu=True, dropout=dropout )
+        self._add_mixer("dout2b")
         self.dlayer2 = blockUNet(channels*4, channels  , 'dlayer2', transposed=True, bn=True, relu=True, dropout=dropout )
+        self._add_mixer("dout2")
 
         self.dlayer1 = nn.Sequential()
         self.dlayer1.add_module('dlayer1_relu', nn.ReLU(inplace=True))
@@ -322,17 +344,17 @@ class TurbNet(nn.Module):
         out4 = self._mix("out4",  self.layer4(out3))
         out5 = self._mix("out5",  self.layer5(out4))
         out6 = self._mix("out6",  self.layer6(out5))
-        dout6 = self.dlayer6(out6)
+        dout6 = self._mix("dout6", self.dlayer6(out6))
         dout6_out5 = torch.cat([dout6, out5], 1)
-        dout5 = self.dlayer5(dout6_out5)
+        dout5 = self._mix("dout5", self.dlayer5(dout6_out5))
         dout5_out4 = torch.cat([dout5, out4], 1)
-        dout4 = self.dlayer4(dout5_out4)
+        dout4 = self._mix("dout4", self.dlayer4(dout5_out4))
         dout4_out3 = torch.cat([dout4, out3], 1)
-        dout3 = self.dlayer3(dout4_out3)
+        dout3 = self._mix("dout3", self.dlayer3(dout4_out3))
         dout3_out2b = torch.cat([dout3, out2b], 1)
-        dout2b = self.dlayer2b(dout3_out2b)
+        dout2b = self._mix("dout2b", self.dlayer2b(dout3_out2b))
         dout2b_out2 = torch.cat([dout2b, out2], 1)
-        dout2 = self.dlayer2(dout2b_out2)
+        dout2 = self._mix("dout2", self.dlayer2(dout2b_out2))
         dout2_out1 = torch.cat([dout2, out1], 1)
         dout1 = self.dlayer1(dout2_out1)
         return dout1
