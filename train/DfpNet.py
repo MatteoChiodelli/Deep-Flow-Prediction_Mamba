@@ -237,7 +237,8 @@ MODEL_CONFIGS = {
     "MM____": {"out1": "vmamba_big", "out2": "vmamba_big"}, # Good, slightly less powerful that MMM but slightly lower complexity
     "Mmm___": {"out1": "vmamba_big", "out2": "vmamba_small", "out2b": "vmamba_small"}, # Bad, smaller mamba layers speed up only a little but lower performance
     "MambaMentality": {"in":"vmamba_head","out1": "vmamba_big", "out2": "vmamba_big", "out2b": "vmamba_big"},
-    "MambaHead": {"out1": "vmamba_huge", "out2": "vmamba_big", "out2b": "vmamba_big"}
+    "MambaHead": {"out1": "vmamba_huge", "out2": "vmamba_big", "out2b": "vmamba_big"},
+    "M1M3": {"out1": "vmamba_big", "out2b": "vmamba_big"}
 
 }
 
