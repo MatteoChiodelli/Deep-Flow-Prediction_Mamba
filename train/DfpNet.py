@@ -330,7 +330,7 @@ class TurbNet(nn.Module):
         elif kind=="vmamba_head":
             block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_conv=3)
         elif kind=="vmamba_huge":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=32,ssm_ratio=4,mlp_ratio=8)
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
         elif kind=="vmamba1":
             block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
         elif kind=="vmamba2":
@@ -338,7 +338,7 @@ class TurbNet(nn.Module):
         elif kind=="vmamba3":
             block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=4)
         elif kind=="vmamba_decoder":
-            block = VMamba_Block(in_channels=in_channels,ssm_d_state=16,ssm_ratio=2,mlp_ratio=2)
+            block = VMamba_Block(in_channels=in_channels,ssm_d_state=24,ssm_ratio=2,mlp_ratio=6)
         elif kind == "attention":
             block = MultiHeadSelfAttention2d(channels=in_channels, num_heads=self.num_heads, dropout=self.attention_dropout)
         else:
