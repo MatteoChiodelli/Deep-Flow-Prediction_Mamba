@@ -37,12 +37,16 @@ batch_size = 10
 lrG = 0.0006
 # decay learning rate?
 decayLr = True
-# channel exponent to control network size
-expo = 5
+# channel exponent to control network size (runTuning.py passes it via DFP_EXPO)
+expo = int(os.environ.get("DFP_EXPO", 5))
 # data set config
 prop=None # by default, use all from "../data/train"
 # save txt files with per epoch loss?
 saveL1 = False
+# fixed seed for the train/val split, so that all seeds are validated on the same samples.
+# None = split depends on the run seed (original behavior, needed to compare with previous runs);
+# 42 reproduces the split of the previous seed-42 runs for every seed
+split_seed = None
 
 ################################################################################
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
@@ -57,9 +61,8 @@ if len(extra_args) in (9, 12):
     mamba_cfg = {
         "vmamba1": {"ssm_d_state": vals[0], "ssm_ratio": vals[1], "mlp_ratio": vals[2]},
         "vmamba2": {"ssm_d_state": vals[3], "ssm_ratio": vals[4], "mlp_ratio": vals[5]},
-        "vmamba3": {"ssm_d_state": 16,      "ssm_ratio": 2,       "mlp_ratio": 4},
+        "vmamba3": {"ssm_d_state": vals[6], "ssm_ratio": vals[7], "mlp_ratio": vals[8]},
     }
-    mamba_cfg["vmamba3"] = {"ssm_d_state": vals[6], "ssm_ratio": vals[7], "mlp_ratio": vals[8]}
     if len(vals) == 12:
         mamba_cfg["vmamba_decoder"] = {"ssm_d_state": vals[9], "ssm_ratio": vals[10], "mlp_ratio": vals[11]}
 elif len(extra_args) > 0:
@@ -79,6 +82,8 @@ print("LR: {}".format(lrG))
 print("LR decay: {}".format(decayLr))
 print("Iterations: {}".format(iterations))
 print("Dropout: {}".format(dropout))
+print("Channel exponent: {}".format(expo))
+print("Split seed: {}".format(split_seed))
 #///////////////////////////////////////////////////////////////////////////////
 ##########################
 
@@ -89,11 +94,11 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
 
 # create pytorch data object with dfp dataset
-data = dataset.TurbDataset(prop, shuffle=1)
+data = dataset.TurbDataset(prop, shuffle=1, splitSeed=split_seed)
 trainLoader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=True)
 print("Training batches: {}".format(len(trainLoader)))
 dataValidation = dataset.ValiDataset(data)
-valiLoader = DataLoader(dataValidation, batch_size=batch_size, shuffle=False, drop_last=True,num_workers=4,pin_memory=True) 
+valiLoader = DataLoader(dataValidation, batch_size=batch_size, shuffle=False, drop_last=False,num_workers=4,pin_memory=True) 
 print("Validation batches: {}".format(len(valiLoader)))
 
 # setup training
@@ -132,7 +137,7 @@ targets = targets.cuda()
 inputs  = inputs.cuda()
 
 ################################################################################
-is_small = True  #HERE
+is_small = "small" in os.path.basename(os.path.normpath(data.dataDir))
 suffix_str = "_small" if is_small else ""   
 
 if tuning_dir:
@@ -244,10 +249,9 @@ for epoch in range(epochs):
             targets.data.resize_as_(targets_cpu).copy_(targets_cpu)
 
             outputs = netG(inputs)
-            outputs_cpu = outputs.data.cpu().numpy()
 
             lossL1 = criterionL1(outputs, targets)
-            L1val_accum += lossL1.item()
+            L1val_accum += lossL1.item() * inputs.size(0)
             
 ################################################################################
             val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
@@ -264,8 +268,12 @@ for epoch in range(epochs):
 #///////////////////////////////////////////////////////////////////////////////
 
             if i == 0 and epoch == (epochs - 1):
+                outputs_cpu = outputs.data.cpu().numpy()
                 input_ndarray = inputs_cpu.cpu().numpy()[0]
-                v_norm = ( np.max(np.abs(input_ndarray[0,:,:]))**2 + np.max(np.abs(input_ndarray[1,:,:]))**2 )**0.5
+                # v_norm must come from the raw (un-normalized) inflow velocity
+                vx_max = np.max(np.abs(input_ndarray[0,:,:])) * data.max_inputs_0
+                vy_max = np.max(np.abs(input_ndarray[1,:,:])) * data.max_inputs_1
+                v_norm = ( vx_max**2 + vy_max**2 )**0.5
 
                 outputs_denormalized = data.denormalize(outputs_cpu[0], v_norm)
                 targets_denormalized = data.denormalize(targets_cpu.cpu().numpy()[0], v_norm)
@@ -281,7 +289,7 @@ for epoch in range(epochs):
     epoch_time_s = time.perf_counter() - epoch_start
     peak_vram_mb = torch.cuda.max_memory_allocated() / 1024**2
 
-    epoch_val_loss = L1val_accum / len(valiLoader)
+    epoch_val_loss = L1val_accum / len(dataValidation)
     val_rel_error = val_abs_diff_sum / max(val_target_sum, 1e-8)
     val_acc_pct = max(0.0, (1.0 - val_rel_error) * 100.0)
 

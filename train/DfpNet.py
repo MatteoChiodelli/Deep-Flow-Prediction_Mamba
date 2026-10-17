@@ -159,12 +159,14 @@ class TurbNetD(nn.Module):
 class VMamba_Block(nn.Module):
     def __init__(self, in_channels,ssm_d_state=16,ssm_ratio=2,ssm_conv=1,mlp_ratio=4):
         super().__init__()
+        if not HAS_VMAMBA:
+            raise ImportError("V-Mamba (vmamba.VSSBlock) could not be imported, V-Mamba mixers are unavailable")
         self.vss_block = VSSBlock(hidden_dim=in_channels, channel_first=True,ssm_d_state=ssm_d_state,ssm_ratio=ssm_ratio,ssm_conv=ssm_conv,mlp_ratio=mlp_ratio,forward_type="v02")   
 #hidden dim = input (input is equal to output) 
 #ssm_d_state = how big the hidden state is (defaul=16)
 #ssm_ratio = how much i increase the size of the input (default=2)
 #channel_first= assumes that the first dimension of the tensor is the channel (for us ALWAYS True)
-#ssm_conv= kernel of the local 1d convolution used to catch close relations (default=3)
+#ssm_conv= kernel of the local depthwise conv before the scan (VSSBlock default=3, here 1 = no conv)
 #mlp_ratio= how much "bigger" is the hidden state of the final mlp (default=4)
 
     def forward(self, x):
@@ -279,9 +281,19 @@ class TurbNet(nn.Module):
             "vmamba_decoder": {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
         }
         if mamba_cfg:
+            # fail loudly instead of silently training the default block (e.g. 12 params passed to "HalfMamba")
+            used = set(mixers.values())
             for k, v in mamba_cfg.items():
-                if k in default_cfg and v is not None:
-                    default_cfg[k].update(v)
+                if v is None:
+                    continue
+                if k not in default_cfg:
+                    raise ValueError(f"Unknown mamba_cfg layer: {k}. Available: {list(default_cfg)}")
+                if k not in used:
+                    raise ValueError(f"mamba_cfg sets '{k}', but this model has no '{k}' block (mixers: {mixers})")
+                bad = set(v) - set(default_cfg[k])
+                if bad:
+                    raise ValueError(f"Unknown mamba_cfg keys for '{k}': {sorted(bad)}. Available: {list(default_cfg[k])}")
+                default_cfg[k].update(v)
         self.mamba_cfg = default_cfg
 
         kinds = list(mixers.values())

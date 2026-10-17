@@ -35,21 +35,24 @@ def find_absmax(data, use_targets, x):
 ######################################## DATA LOADER #########################################
 #         also normalizes data with max , and optionally makes it dimensionless              #
 
-def LoaderNormalizer(data, isTest = False, shuffle = 0, dataProp = None):
+def LoaderNormalizer(data, isTest = False, shuffle = 0, dataProp = None, splitSeed = None):
     """
     # data: pass TurbDataset object with initialized dataDir / dataDirTest paths
     # train: when off, process as test data (first load regular for normalization if needed, then replace by test data)
     # dataProp: proportions for loading & mixing 3 different data directories "reg", "shear", "sup"
     #           should be array with [total-length, fraction-regular, fraction-superimposed, fraction-sheared],
     #           passing None means off, then loads from single directory
+    # splitSeed: seed of a dedicated RNG for the file shuffle (train/val split), independent of the
+    #            global seed; None uses the global `random` state
     """
+    rng = random.Random(splitSeed) if splitSeed is not None else random
 
     if dataProp is None:
         # load single directory
         files = listdir(data.dataDir)
         files.sort()
         for i in range(shuffle):
-            random.shuffle(files) 
+            rng.shuffle(files) 
         if isTest:
             print("Reducing data to load for tests")
             files = files[0:min(10, len(files))]
@@ -77,9 +80,9 @@ def LoaderNormalizer(data, isTest = False, shuffle = 0, dataProp = None):
         files3 = listdir(data.dataDir + "shear/" )
         files3.sort()
         for i in range(shuffle):
-            random.shuffle(files1) 
-            random.shuffle(files2) 
-            random.shuffle(files3) 
+            rng.shuffle(files1) 
+            rng.shuffle(files2) 
+            rng.shuffle(files3) 
 
         temp_1, temp_2 = 0, 0
         for i in range(data.totalLength):
@@ -203,7 +206,7 @@ class TurbDataset(Dataset):
     TRAIN = 0
     TEST  = 2
 
-    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train_small/", dataDirTest="../data/test/", shuffle=0, normMode=0): #HERE
+    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train_small/", dataDirTest="../data/test/", shuffle=0, normMode=0, splitSeed=None): #HERE
         global makeDimLess, removePOffset
         """
         :param dataProp: for split&mix from multiple dirs, see LoaderNormalizer; None means off
@@ -211,6 +214,7 @@ class TurbDataset(Dataset):
         :param dataDir: directory containing training data
         :param dataDirTest: second directory containing test data , needs training dir for normalization
         :param normMode: toggle normalization
+        :param splitSeed: fixed seed for the train/val split (None = depends on global random state)
         """
         if not (mode==self.TRAIN or mode==self.TEST):
             print("Error - TurbDataset invalid mode "+format(mode) ); exit(1)
@@ -234,7 +238,7 @@ class TurbDataset(Dataset):
         self.max_inputs_0 = 1.0
         self.max_inputs_1 = 1.0
         self.max_inputs_2 = 1.0
-        self = LoaderNormalizer(self, isTest=(mode==self.TEST), dataProp=dataProp, shuffle=shuffle)
+        self = LoaderNormalizer(self, isTest=(mode==self.TEST), dataProp=dataProp, shuffle=shuffle, splitSeed=splitSeed)
 
         if not self.mode==self.TEST:
             # split for train/validation sets (80/20) , max 400
