@@ -19,7 +19,7 @@ EXPO         = 5
 
 BASELINE_VAL_ERR_PCT = 1.9530 # Average of last 20 epoches of baseline
 
-EXPERIMENTS = [
+EXPERIMENTS = [ 
 
     [16, 2, 4,   16, 2, 4,   16, 2, 4,   12, 2, 3],
     [16, 2, 4,   16, 2, 4,   16, 2, 4,   16, 1, 2],
@@ -133,7 +133,7 @@ def main():
             row_name = get_row_name(MODEL_TYPE, TUNING_LAYER, params, seen_counts)
             
         else:
-            row_name="Combination_{i}"
+            row_name=f"Combination_{i}"
         params_str = count_params_millions(MODEL_TYPE, EXPO, mamba_cfg)
         print(f"\n>>> [{idx}/{len(EXPERIMENTS)}] Starting Run: {row_name} ({params_str})")
         print(f"    Configuration Done: {params}")

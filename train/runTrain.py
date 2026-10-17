@@ -142,9 +142,6 @@ else:
 
 os.makedirs(metrics_dir, exist_ok=True)
 
-metrics_dir = os.path.join("metrics", model_type, f"{model_type}_{run_name}_s{seed}{suffix_str}")
-os.makedirs(metrics_dir, exist_ok=True)
-
 metrics_file = os.path.join(metrics_dir, "metrics_train.csv")
 plot_path = os.path.join(metrics_dir, "loss_curve_train.png")
 ################################################################################
