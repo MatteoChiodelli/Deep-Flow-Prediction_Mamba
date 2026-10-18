@@ -4,12 +4,12 @@ Seeds: [42, 1955, 2003]
 Trainable parameters: 2.33 Millions (2,332,035 total)
 
 --- VALIDATION (During Training) ---
-Validation Loss final:       0.003654 +/- 0.000017
-Validation Accuracy final:   98.07% +/- 0.00%
+Validation Loss final:       0.003596 +/- 0.000085
+Validation Accuracy final:   98.10% +/- 0.04%
 
-Val Error Pressure (p):      9.60% +/- 0.41%
-Val Error Velocity X (vx):   1.10% +/- 0.01%
-Val Error Velocity Y (vy):   4.31% +/- 0.13%
+Val Error Pressure (p):      9.44% +/- 0.17%
+Val Error Velocity X (vx):   1.08% +/- 0.03%
+Val Error Velocity Y (vy):   4.26% +/- 0.10%
 
 --- TESTING (Unseen Data) ---
 Rel Error Pressure (%):      14.50% +/- 0.58%
