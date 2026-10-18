@@ -1,0 +1,16 @@
+model                             , config                     , val_error_last20_pct, peak_val_error_pct, train_error_last20_pct, mean_epoch_time_s, mean_vram_mb, params  , improvement_vs_baseline_pct
+HalfMamba_Augmented_Combination_4 , 16-2-4_16-2-4_16-2-4_32-2-4, 1.6284%             , 1.5991%           , 0.8888%               , 30.00s           , 743.7 MB    , 2.58 Mln, +16.62%
+HalfMamba_Augmented_Combination_12, 16-2-4_24-2-2_16-2-4_16-2-4, 1.6734%             , 1.6411%           , 0.9099%               , 27.36s           , 722.2 MB    , 2.56 Mln, +14.32%
+HalfMamba_Augmented_Combination_11, 16-2-4_12-2-3_16-2-4_16-2-4, 1.7176%             , 1.6838%           , 0.9379%               , 26.40s           , 718.4 MB    , 2.55 Mln, +12.05%
+HalfMamba_Augmented_Combination_1 , 16-2-4_16-2-4_16-2-4_12-2-3, 1.7203%             , 1.6888%           , 0.9006%               , 25.60s           , 710.9 MB    , 2.56 Mln, +11.91%
+HalfMamba_Augmented_Combination_2 , 16-2-4_16-2-4_16-2-4_16-1-2, 1.7292%             , 1.6942%           , 0.9368%               , 24.92s           , 558.8 MB    , 2.55 Mln, +11.46%
+HalfMamba_Augmented_Combination_9 , 16-2-4_32-2-2_16-2-4_16-2-4, 1.7330%             , 1.6999%           , 0.9859%               , 27.63s           , 723.9 MB    , 2.57 Mln, +11.26%
+HalfMamba_Augmented_Combination_15, 16-2-4_16-2-4_24-2-2_16-2-4, 1.7345%             , 1.6987%           , 0.8890%               , 27.36s           , 722.6 MB    , 2.56 Mln, +11.19%
+HalfMamba_Augmented_Combination_7 , 24-3-4_16-2-4_16-2-4_16-2-4, 1.7466%             , 1.7171%           , 0.9066%               , 30.55s           , 803.6 MB    , 2.58 Mln, +10.57%
+HalfMamba_Augmented_Combination_14, 16-2-4_16-2-4_12-2-3_16-2-4, 1.7524%             , 1.7246%           , 0.9202%               , 26.79s           , 721.4 MB    , 2.55 Mln, +10.27%
+HalfMamba_Augmented_Combination_8 , 24-2-2_16-2-4_16-2-4_16-2-4, 1.7549%             , 1.7299%           , 0.9235%               , 27.53s           , 722.6 MB    , 2.57 Mln, +10.14%
+HalfMamba_Augmented_Combination_10, 16-2-4_24-2-4_16-2-4_16-2-4, 1.7565%             , 1.7265%           , 0.9379%               , 27.17s           , 725.5 MB    , 2.58 Mln, +10.06%
+HalfMamba_Augmented_Combination_6 , 16-4-4_16-2-4_16-2-4_16-2-4, 1.7583%             , 1.7223%           , 0.8946%               , 31.58s           , 859.4 MB    , 2.59 Mln, +9.97%
+HalfMamba_Augmented_Combination_5 , 12-2-3_16-2-4_16-2-4_16-2-4, 1.7622%             , 1.7226%           , 0.9237%               , 25.81s           , 712.7 MB    , 2.56 Mln, +9.77%
+HalfMamba_Augmented_Combination_3 , 16-2-4_16-2-4_16-2-4_24-2-2, 1.8038%             , 1.7704%           , 0.9736%               , 28.26s           , 696.9 MB    , 2.57 Mln, +7.64%
+HalfMamba_Augmented_Combination_13, 16-2-4_16-2-4_32-2-2_16-2-4, 1.8633%             , 1.8356%           , 0.9481%               , 27.34s           , 724.6 MB    , 2.57 Mln, +4.59%
