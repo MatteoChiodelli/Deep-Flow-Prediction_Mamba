@@ -1,0 +1,12 @@
+model,val_error_last20_pct,peak_val_error_pct,train_error_last20_pct,mean_epoch_time_s,mean_vram_mb,params,improvement_vs_baseline_pct
+Combination_1,1.7497%,1.7269%,1.0087%,23.66s,490.7 MB,2.53 Mln,+10.41%
+Combination_2,1.8165%,1.7690%,1.0644%,27.94s,636.5 MB,2.56 Mln,+6.99%
+Combination_3,1.7571%,1.7266%,0.9996%,27.14s,580.7 MB,2.56 Mln,+10.03%
+Combination_4,1.8206%,1.7804%,1.0487%,24.77s,488.5 MB,2.54 Mln,+6.78%
+Combination_5,1.8177%,1.7785%,1.0776%,24.94s,500.3 MB,2.54 Mln,+6.93%
+Combination_6,1.7899%,1.7684%,0.9735%,24.56s,502.9 MB,2.55 Mln,+8.35%
+Combination_7,1.7699%,1.7455%,1.0827%,24.14s,494.2 MB,2.52 Mln,+9.38%
+Combination_8,1.8566%,1.8068%,1.0902%,24.77s,499.2 MB,2.53 Mln,+4.94%
+Combination_9,1.8159%,1.7826%,1.0390%,24.35s,503.2 MB,2.54 Mln,+7.02%
+Combination_10,1.8582%,1.8323%,1.1004%,24.43s,498.6 MB,2.52 Mln,+4.86%
+Combination_11,1.8349%,1.8069%,1.1026%,24.36s,499.8 MB,2.53 Mln,+6.05%
