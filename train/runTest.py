@@ -60,7 +60,7 @@ lf = "./" + prefix + "testout{}.txt".format(suffix)
 utils.makeDirs(["results_test"])
 
 #################################################################################
-is_small = True  #HERE
+is_small = "small" in os.path.basename(os.path.normpath(dataset.dataDir))
 suffix_str = "_small" if is_small else ""
 
 metrics_dir = os.path.join("metrics", model_type, f"{model_type}_{run_name}_s{seed}{suffix_str}")
@@ -155,6 +155,8 @@ for si in range(25):
 
         # Calculate the norm
         input_ndarray = inputs_cpu.cpu().numpy()[0]
+        # NOTE: v_norm is computed on the normalized inputs (original DFP code), so l1_loss_denormalized is not
+        # in physical units; kept as is to stay comparable with previous test results
         v_norm = ( np.max(np.abs(input_ndarray[0,:,:]))**2 + np.max(np.abs(input_ndarray[1,:,:]))**2 )**0.5
 
         outputs_denormalized = dataset.denormalize(outputs_cpu, v_norm)
