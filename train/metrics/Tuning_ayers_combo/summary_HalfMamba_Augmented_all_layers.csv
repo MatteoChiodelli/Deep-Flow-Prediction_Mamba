@@ -1,0 +1,2 @@
+model,config,val_error_last20_pct,peak_val_error_pct,train_error_last20_pct,mean_epoch_time_s,mean_vram_mb,params,improvement_vs_baseline_pct
+HalfMamba_Augmented_16-2-4_24-2-2_16-2-4_32-2-4,16-2-4_24-2-2_16-2-4_32-2-4,1.7491%,1.7203%,0.9299%,30.55s,741.0 MB,2.57 Mln,+10.44%

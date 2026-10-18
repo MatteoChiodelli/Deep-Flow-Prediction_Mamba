@@ -14,7 +14,7 @@ from DfpNet import build_model
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-MODEL_TYPE   = "HalfMamba"      # "HalfMamba" (9 params: 3x3) or "HalfMamba_Augmented" (12 params: 3x4)
+MODEL_TYPE   = "HalfMamba_Augmented"      # "HalfMamba" (9 params: 3x3) or "HalfMamba_Augmented" (12 params: 3x4)
 TUNING_LAYER = "all_layers"        # "vmamba1", "vmamba2", "vmamba3", or "vmamba_decoder"
 SEED         = 42
 EXPO         = 5              
@@ -25,20 +25,7 @@ EXPERIMENTS = [
 
 
 
-    [12, 2, 3,   16, 2, 4,   16, 2, 4],
-    [16, 4, 4,   16, 2, 4,   16, 2, 4],
-    [24, 3, 4,   16, 2, 4,   16, 2, 4],
-    [24, 2, 2,   16, 2, 4,   16, 2, 4],
-
-    [16, 2, 4,   32, 2, 2,   16, 2, 4],
-    [16, 2, 4,   24, 2, 4,   16, 2, 4],
-    [16, 2, 4,   12, 2, 3,   16, 2, 4],
-    [16, 2, 4,   24, 2, 2,   16, 2, 4],
-
-    [16, 2, 4,   16, 2, 4,   32, 2, 2],
-    [16, 2, 4,   16, 2, 4,   12, 2, 3],
-    [16, 2, 4,   16, 2, 4,   24, 2, 2],
-
+    [16, 2, 4,   24, 2, 2,   16, 2, 4,   32, 2, 4]
 ]
 
 
