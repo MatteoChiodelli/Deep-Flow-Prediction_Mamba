@@ -13,8 +13,7 @@ from DfpNet import build_model
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
-MODEL_TYPE   = "HalfMamba"      # "HalfMamba" (9 params: 3x3) or "HalfMamba_Augmented" (12 params: 3x4)
+MODEL_TYPE   = "HalfMamba_Augmented"      # "HalfMamba" (9 params: 3x3) or "HalfMamba_Augmented" (12 params: 3x4)
 TUNING_LAYER = "all_layers"        # "vmamba1", "vmamba2", "vmamba3", or "vmamba_decoder"
 SEED         = 42
 EXPO         = 5              
@@ -23,21 +22,24 @@ BASELINE_VAL_ERR_PCT = 1.9530 # Average of last 20 epoches of baseline
 
 EXPERIMENTS = [ 
 
+    [16, 2, 4,   16, 2, 4,   16, 2, 4,   12, 2, 3],
+    [16, 2, 4,   16, 2, 4,   16, 2, 4,   16, 1, 2],
+    [16, 2, 4,   16, 2, 4,   16, 2, 4,   24 ,2, 2],
+    [16, 2, 4,   16, 2, 4,   16, 2, 4,   32 ,2, 4],
 
+    [12, 2, 3,   16, 2, 4,   16, 2, 4,   16 ,2, 4],
+    [16, 4, 4,   16, 2, 4,   16, 2, 4,   16 ,2, 4],
+    [24, 3, 4,   16, 2, 4,   16, 2, 4,   16 ,2, 4],
+    [24, 2, 2,   16, 2, 4,   16, 2, 4,   16 ,2, 4],
 
-    [12, 2, 3,   16, 2, 4,   16, 2, 4],
-    [16, 4, 4,   16, 2, 4,   16, 2, 4],
-    [24, 3, 4,   16, 2, 4,   16, 2, 4],
-    [24, 2, 2,   16, 2, 4,   16, 2, 4],
+    [16, 2, 4,   32, 2, 2,   16, 2, 4,   16 ,2, 4],
+    [16, 2, 4,   24, 2, 4,   16, 2, 4,   16 ,2, 4],
+    [16, 2, 4,   12, 2, 3,   16, 2, 4,   16 ,2, 4],
+    [16, 2, 4,   24, 2, 2,   16, 2, 4,   16 ,2, 4],
 
-    [16, 2, 4,   32, 2, 2,   16, 2, 4],
-    [16, 2, 4,   24, 2, 4,   16, 2, 4],
-    [16, 2, 4,   12, 2, 3,   16, 2, 4],
-    [16, 2, 4,   24, 2, 2,   16, 2, 4],
-
-    [16, 2, 4,   16, 2, 4,   32, 2, 2],
-    [16, 2, 4,   16, 2, 4,   12, 2, 3],
-    [16, 2, 4,   16, 2, 4,   24, 2, 2],
+    [16, 2, 4,   16, 2, 4,   32, 2, 2,   16 ,2, 4],
+    [16, 2, 4,   16, 2, 4,   12, 2, 3,   16 ,2, 4],
+    [16, 2, 4,   16, 2, 4,   24, 2, 2,   16 ,2, 4],
 
 ]
 
@@ -76,14 +78,11 @@ def params_to_str(params):
     return "_".join("-".join(fmt_num(p) for p in params[i:i+3]) for i in range(0, len(params), 3))
 
 def get_row_name(model_type, tuning_layer, params, seen_counts):
-    if tuning_layer == "all_layers":
-        base_name = f"{model_type}_{params_to_str(params)}"
-    else:
-        idx = LAYER_INDEX_MAP[tuning_layer]
-        if idx >= len(params):
-            raise ValueError(f"TUNING_LAYER='{tuning_layer}' richiede 12 parametri, ma ne hai passati {len(params)}.")
-        d_s, s_r, m_r = fmt_num(params[idx]), fmt_num(params[idx+1]), fmt_num(params[idx+2])
-        base_name = f"{model_type}_{d_s}_{s_r}_{m_r}"
+    idx = LAYER_INDEX_MAP[tuning_layer]
+    if idx >= len(params):
+        raise ValueError(f"TUNING_LAYER='{tuning_layer}' richiede 12 parametri, ma ne hai passati {len(params)}.")
+    d_s, s_r, m_r = fmt_num(params[idx]), fmt_num(params[idx+1]), fmt_num(params[idx+2])
+    base_name = f"{model_type}_{d_s}_{s_r}_{m_r}"
     
     # Se provi due run che hanno gli stessi 3 valori sul layer target ma cambiano altro, evita sovrascritture
     seen_counts[base_name] = seen_counts.get(base_name, 0) + 1
@@ -150,6 +149,8 @@ def write_summary(summary_csv_path, summary_rows):
             writer.writerow(r)
 
 def main():
+    if TUNING_LAYER not in LAYER_INDEX_MAP:
+        raise ValueError(f"TUNING_LAYER='{TUNING_LAYER}' non valido, scegli tra {list(LAYER_INDEX_MAP)}")
     # runTrain.py, ../data and metrics/ are all relative to the train/ folder
     os.chdir(SCRIPT_DIR)
     tuning_folder_name = f"Tuning_{TUNING_LAYER}"
@@ -162,13 +163,18 @@ def main():
     seen_counts = {}
 
     print("=" * 80)
-    print(f"ACITVATING AUTO TRAIN | Modello: {MODEL_TYPE} | Layer Target: {TUNING_LAYER} | Seed: {SEED}")
+    print(f"ACTIVATING AUTO TRAIN | Modello: {MODEL_TYPE} | Layer Target: {TUNING_LAYER} | Seed: {SEED}")
     print(f"Output Folder: {tuning_base_dir}")
     print(f"Total number of combinations: {len(EXPERIMENTS)}")
     print("=" * 80)
     for idx, params in enumerate(EXPERIMENTS, 1):
         mamba_cfg = params_to_mamba_cfg(params)
-        row_name = get_row_name(MODEL_TYPE, TUNING_LAYER, params, seen_counts)
+        if TUNING_LAYER!='all_layers':
+            row_name = get_row_name(MODEL_TYPE, TUNING_LAYER, params, seen_counts)
+            
+        else:
+            # model type in the name, otherwise HalfMamba and HalfMamba_Augmented runs share (and overwrite) the same folders
+            row_name=f"{MODEL_TYPE}_Combination_{idx}"
         config_str = params_to_str(params)
         params_str = count_params_millions(MODEL_TYPE, EXPO, mamba_cfg)
         print(f"\n>>> [{idx}/{len(EXPERIMENTS)}] Starting Run: {row_name} ({params_str})")
@@ -186,16 +192,16 @@ def main():
         
         run_metrics_csv = os.path.join(tuning_base_dir, row_name, "metrics_train.csv")
         if result.returncode != 0 or not os.path.exists(run_metrics_csv):
-            print(f"[ERROR] Run {row_name} failerd o did not generate {run_metrics_csv}. Going next...")
+            print(f"[ERROR] Run {row_name} failed or did not generate {run_metrics_csv}. Going next...")
             continue
 
         row_summary = summarize_run_csv(run_metrics_csv, row_name, config_str, params_str, BASELINE_VAL_ERR_PCT)
-        # a re-run of the same config replaces its old row
+        # a re-run with the same name overwrites its folder, so it also replaces its old row
         summary_rows = [r for r in summary_rows if r["model"] != row_name]
         summary_rows.append(row_summary)
         write_summary(summary_csv_path, summary_rows)
 
-        print(f"<<< [{idx}/{len(EXPERIMENTS)}] Completated {row_name}: Val(20)={row_summary['val_error_last20_pct']} | Peak={row_summary['peak_val_error_pct']} | Impr={row_summary['improvement_vs_baseline_pct']}")
+        print(f"<<< [{idx}/{len(EXPERIMENTS)}] Completed {row_name}: Val(20)={row_summary['val_error_last20_pct']} | Peak={row_summary['peak_val_error_pct']} | Impr={row_summary['improvement_vs_baseline_pct']}")
 
     print("\n" + "=" * 80)
     print(f"TUNING COMPLETE! Riepilogo salvato in: {summary_csv_path}")
