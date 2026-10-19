@@ -28,6 +28,20 @@ from utils import log
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
 run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
 seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
+# same Mamba hyperparameters used in training (argv[5:]), otherwise the weights don't match
+mamba_cfg = None
+extra_args = sys.argv[5:]
+if len(extra_args) in (9, 12):
+    vals = [float(x) if '.' in x else int(x) for x in extra_args]
+    mamba_cfg = {
+        "vmamba1": {"ssm_d_state": vals[0], "ssm_ratio": vals[1], "mlp_ratio": vals[2]},
+        "vmamba2": {"ssm_d_state": vals[3], "ssm_ratio": vals[4], "mlp_ratio": vals[5]},
+        "vmamba3": {"ssm_d_state": vals[6], "ssm_ratio": vals[7], "mlp_ratio": vals[8]},
+    }
+    if len(vals) == 12:
+        mamba_cfg["vmamba_decoder"] = {"ssm_d_state": vals[9], "ssm_ratio": vals[10], "mlp_ratio": vals[11]}
+elif len(extra_args) > 0:
+    raise ValueError(f"Pass 9 or 12 hyperparametrers: {len(extra_args)}")
 
 if seed_arg is not None:
     seed = seed_arg
@@ -55,7 +69,7 @@ outputs_dn = torch.FloatTensor(1, 3, 128, 128)
 outputs_dn = Variable(outputs_dn)
 outputs_dn = outputs_dn.cuda()
 
-netG = build_model(model_type, channelExponent=expo)
+netG = build_model(model_type, channelExponent=expo, mamba_cfg=mamba_cfg)
 lf = "./" + prefix + "testout{}.txt".format(suffix) 
 utils.makeDirs(["results_test"])
 

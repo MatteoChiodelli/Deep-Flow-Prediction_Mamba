@@ -18,7 +18,8 @@ SEEDS = [42, 1955, 2003]
 BIG = 0 # 1= Big Dataset 
         # Remember to also update the files runTrain.py,runTest.py,dataset.py with the big dataset (search #HERE)
 SAVE = 1        # 1 = Save
-RUN_TEST = 0    # 1 = Test
+RUN_TRAIN = 0   # 1 = Train (0 = test only, reuses the modelG files already trained)
+RUN_TEST = 1    # 1 = Test
 GPU = 1 # Using gpu
         # Recommended: only use Big=1 when GPU=1
 # ------------------------------------
@@ -39,7 +40,16 @@ def run_model(MODEL, RUN_NAME, MAMBA_PARAMS):
     print(f"=== Starting multi seed experiment for: {MODEL} ===")
 
     trainable_parameters = None
-    for seed in SEEDS:
+    if not RUN_TRAIN:
+        # no training output to parse: recover the parameter count from the previous summary
+        old_summary = os.path.join("metrics", MODEL, f"summary_{MODEL}_{RUN_NAME}{suffix_str}.txt")
+        if os.path.isfile(old_summary):
+            with open(old_summary) as f:
+                parameter_match = re.search(r"\(([\d,]+) total\)", f.read())
+            if parameter_match:
+                trainable_parameters = int(parameter_match.group(1).replace(",", ""))
+
+    for seed in (SEEDS if RUN_TRAIN else []):
         print(f"\n--- Launching TRAINING {MODEL} with Seed: {seed} ---")
         cmd = [
             "python",
@@ -92,6 +102,8 @@ def run_model(MODEL, RUN_NAME, MAMBA_PARAMS):
                 RUN_NAME,
                 str(seed)
             ]
+            if MAMBA_PARAMS:
+                cmd += ["default"] + [str(p) for p in MAMBA_PARAMS]
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             if proc.stdout:
                 for line in proc.stdout:
