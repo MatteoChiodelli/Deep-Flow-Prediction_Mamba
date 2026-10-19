@@ -206,7 +206,7 @@ class TurbDataset(Dataset):
     TRAIN = 0
     TEST  = 2
 
-    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train_small/", dataDirTest="../data/test/", shuffle=0, normMode=0, splitSeed=None): #HERE
+    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train/", dataDirTest="../data/test/", shuffle=0, normMode=0, splitSeed=None): #HERE
         global makeDimLess, removePOffset
         """
         :param dataProp: for split&mix from multiple dirs, see LoaderNormalizer; None means off

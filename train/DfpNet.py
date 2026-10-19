@@ -278,7 +278,7 @@ class TurbNet(nn.Module):
             "vmamba1":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
             "vmamba2":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
             "vmamba3":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
-            "vmamba_decoder": {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
+            "vmamba_decoder": {"ssm_d_state": 32, "ssm_ratio": 2, "mlp_ratio": 4},
         }
         if mamba_cfg:
             # fail loudly instead of silently training the default block (e.g. 12 params passed to "HalfMamba")
