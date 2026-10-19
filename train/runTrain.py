@@ -44,9 +44,9 @@ prop=None # by default, use all from "../data/train"
 # save txt files with per epoch loss?
 saveL1 = False
 # fixed seed for the train/val split, so that all seeds are validated on the same samples.
-# None = split depends on the run seed (original behavior, needed to compare with previous runs);
+# None = split depends on the run seed (original behavior, needed to compare with older multi-seed runs);
 # 42 reproduces the split of the previous seed-42 runs for every seed
-split_seed = None
+split_seed = 42
 
 ################################################################################
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
