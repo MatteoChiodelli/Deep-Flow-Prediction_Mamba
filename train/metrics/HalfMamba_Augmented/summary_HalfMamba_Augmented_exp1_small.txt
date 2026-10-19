@@ -1,0 +1,12 @@
+Experiment: HalfMamba_Augmented_exp1
+Seeds: [42, 1955, 2003]
+
+Trainable parameters: 2.58 Millions (2,577,219 total)
+
+--- VALIDATION (During Training) ---
+Validation Loss final:       0.003387 +/- 0.000154
+Validation Accuracy final:   98.21% +/- 0.07%
+
+Val Error Pressure (p):      9.01% +/- 0.14%
+Val Error Velocity X (vx):   1.03% +/- 0.05%
+Val Error Velocity Y (vy):   3.89% +/- 0.11%
