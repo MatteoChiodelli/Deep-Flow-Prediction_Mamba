@@ -10,3 +10,9 @@ Validation Accuracy final:   98.21% +/- 0.07%
 Val Error Pressure (p):      9.01% +/- 0.14%
 Val Error Velocity X (vx):   1.03% +/- 0.05%
 Val Error Velocity Y (vy):   3.89% +/- 0.11%
+
+--- TESTING (Unseen Data) ---
+Rel Error Pressure (%):      12.66% +/- 1.24%
+Rel Error Velocity (%):      2.25% +/- 0.13%
+Rel Error Aggregate (%):     2.72% +/- 0.17%
+Test Accuracy final:         97.28% +/- 0.17%

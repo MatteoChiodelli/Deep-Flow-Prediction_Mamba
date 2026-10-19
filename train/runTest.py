@@ -114,7 +114,10 @@ for si in range(25):
     s = chr(96+si)
     if(si==0): 
         s = "" # check modelG, and modelG + char
-    modelFn = "./" + prefix + "modelG{}{}".format(suffix,s)
+    # runTrain.py saves the model in metrics_dir, older runs have it in the working directory
+    modelFn = os.path.join(metrics_dir, prefix + "modelG{}{}".format(suffix,s))
+    if not os.path.isfile(modelFn):
+        modelFn = "./" + prefix + "modelG{}{}".format(suffix,s)
     if not os.path.isfile(modelFn):
         continue
 
@@ -248,6 +251,9 @@ for si in range(25):
 #/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     avgLoss += lossPer_accum
     losses.append(lossPer_accum)
+
+if len(models) == 0:
+    sys.exit(f"No model found for {prefix}modelG in {metrics_dir} or in the working directory")
 
 if len(losses)>1:
     avgLoss /= len(losses)
