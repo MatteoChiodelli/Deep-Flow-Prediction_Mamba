@@ -1,1 +1,0 @@
-model,sample_id,l1_loss,l1_loss_denormalized,rel_error_pressure_pct,rel_error_velocity_pct,rel_error_aggregate_pct,accuracy_pressure_pct,accuracy_velocity_pct,accuracy_aggregate_pct
