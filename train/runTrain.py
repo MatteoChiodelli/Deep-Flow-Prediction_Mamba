@@ -30,7 +30,7 @@ cudnn.enabled = True
 cudnn.benchmark = True
 
 # number of training iterations
-iterations = 90000
+iterations = 250000
 # batch size
 batch_size = 10
 # learning rate, generator
@@ -40,7 +40,7 @@ decayLr = True
 # channel exponent to control network size (runTuning.py passes it via DFP_EXPO)
 expo = int(os.environ.get("DFP_EXPO", 5))
 # data set config
-prop=None # by default, use all from "../data/train"
+prop = [53830, 0.4964, 0.0, 0.5036] # by default, use all from "../data/train"
 # save txt files with per epoch loss?
 saveL1 = False
 # fixed seed for the train/val split, so that all seeds are validated on the same samples.

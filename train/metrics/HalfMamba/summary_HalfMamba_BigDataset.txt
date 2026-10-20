@@ -1,0 +1,2 @@
+Experiment: HalfMamba_BigDataset
+Seeds: [42, 1955, 2003]

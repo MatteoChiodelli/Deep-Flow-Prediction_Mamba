@@ -38,7 +38,8 @@ prefix = f"{model_type}_{run_name}_s{seed}_"
 suffix = ""
 #/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 expo = 5
-dataset = TurbDataset(None, mode=TurbDataset.TEST, dataDirTest="../data/test/")
+prop = [53830, 0.4964, 0.0, 0.5036]
+dataset = TurbDataset(prop, mode=TurbDataset.TEST, dataDirTest="../data/test/")
 testLoader = DataLoader(dataset, batch_size=1, shuffle=False)
 
 targets = torch.FloatTensor(1, 3, 128, 128)

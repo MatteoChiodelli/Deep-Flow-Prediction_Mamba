@@ -260,8 +260,8 @@ MODEL_CONFIGS["HMdec_d2_d2b_d3"] = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2
 
 # Final configs
 MODEL_CONFIGS["HalfMamba"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3"}
-MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3", "dout2": "vmamba_decoder"}
-
+MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmambad2", "out2b": "vmamba3", "dout2": "vmamba_decoder"}
+MODEL_CONFIGS["HalfMamba24_2_2"] = {"out1":"vmamba1", "out2":"vmambad2", "out2b":"vmamba3"}
 
 class TurbNet(nn.Module):
     def __init__(self, mixers=None, channelExponent=6, dropout=0., num_heads=8, attention_dropout=0., mamba_cfg=None):
@@ -276,7 +276,8 @@ class TurbNet(nn.Module):
 
         default_cfg = {
             "vmamba1":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
-            "vmamba2":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
+            "vmambad2":        {"ssm_d_state": 24, "ssm_ratio": 2, "mlp_ratio": 2},
+	    "vmamba2":          {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
             "vmamba3":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
             "vmamba_decoder": {"ssm_d_state": 32, "ssm_ratio": 2, "mlp_ratio": 4},
         }
@@ -352,7 +353,7 @@ class TurbNet(nn.Module):
             block = VMamba_Block(in_channels=in_channels, ssm_d_state=32, ssm_conv=3)
         elif kind == "vmamba_huge":
             block = VMamba_Block(in_channels=in_channels, ssm_d_state=32, ssm_ratio=4, mlp_ratio=8)
-        elif kind in ("vmamba1", "vmamba2", "vmamba3", "vmamba_decoder"):
+        elif kind in ("vmamba1", "vmamba2","vmambad2", "vmamba3", "vmamba_decoder"):
             cfg = self.mamba_cfg[kind]
             block = VMamba_Block(
                 in_channels=in_channels,
