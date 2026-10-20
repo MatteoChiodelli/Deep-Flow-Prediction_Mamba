@@ -30,7 +30,7 @@ cudnn.enabled = True
 cudnn.benchmark = True
 
 # number of training iterations
-iterations = 250000
+iterations = 400000
 # batch size
 batch_size = 10
 # learning rate, generator
