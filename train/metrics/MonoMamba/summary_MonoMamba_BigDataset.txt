@@ -1,0 +1,12 @@
+Experiment: MonoMamba_BigDataset
+Seeds: [42, 1955, 2003]
+
+Trainable parameters: 2.38 Millions (2,380,707 total)
+
+--- VALIDATION (During Training) ---
+Validation Loss final:       0.003424 +/- 0.000492
+Validation Accuracy final:   98.19% +/- 0.25%
+
+Val Error Pressure (p):      8.89% +/- 1.14%
+Val Error Velocity X (vx):   1.03% +/- 0.14%
+Val Error Velocity Y (vy):   3.88% +/- 0.51%
