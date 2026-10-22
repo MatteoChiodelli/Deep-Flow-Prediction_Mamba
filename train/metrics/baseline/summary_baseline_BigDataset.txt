@@ -1,0 +1,12 @@
+Experiment: baseline_BigDataset
+Seeds: [42, 1955, 2003]
+
+Trainable parameters: 2.33 Millions (2,332,035 total)
+
+--- VALIDATION (During Training) ---
+Validation Loss final:       0.003270 +/- 0.000163
+Validation Accuracy final:   98.27% +/- 0.08%
+
+Val Error Pressure (p):      8.46% +/- 0.40%
+Val Error Velocity X (vx):   0.98% +/- 0.04%
+Val Error Velocity Y (vy):   3.76% +/- 0.08%
