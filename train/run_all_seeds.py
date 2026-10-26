@@ -1,3 +1,13 @@
+################
+#
+# Multi-seed experiment runner (our script)
+#
+# Trains (and optionally tests) one model with the 3 seeds below by calling runTrain.py / runTest.py
+# as subprocesses, then reads their metrics CSVs and reports mean +/- std over the seeds.
+# usage: python run_all_seeds.py <model_type>
+#
+################
+
 import subprocess
 import os
 import glob
@@ -11,12 +21,13 @@ if len(sys.argv) > 1:
     MODEL = sys.argv[1]
 else:
     MODEL = "baseline"
-# any name in DfpNet.MODEL_CONFIGS: 'baseline', 'mambaSup', 'fullMamba', 'C0'...'C4'
+# any name in DfpNet.MODEL_CONFIGS, e.g. 'baseline', 'halfMamba', 'HalfMamba_Augmented', 'MonoMamba'
 
+# --- settings ---
 RUN_NAME = "BigDataset"
 SEEDS = [42, 1955, 2003]
-BIG = 1 # 1= Big Dataset 
-        # Remember to also update the files runTrain.py,runTest.py,dataset.py with the big dataset (search #HERE)
+BIG = 1 # 1 = Big (full) dataset, 0 = small dataset. Only used here to find the metrics folders (_small suffix):
+        # the data folder itself is set in dataset.py (and the CPU scripts), search #HERE
 SAVE = 1        # 1 = Save
 RUN_TEST = 1    # 1 = Test
 GPU = 1 # Using gpu
@@ -50,9 +61,10 @@ for seed in SEEDS:
     ]
 
     
+    # stream the training output live and keep a copy to read the parameter count from it
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     out_lines = []
-    
+
     if proc.stdout:
         for line in proc.stdout:
             print(line, end="", flush=True)
@@ -95,6 +107,8 @@ if RUN_TEST:
                 print(line, end="", flush=True) 
         proc.wait()
 
+# Aggregation: last epoch of each metrics_train.csv (validation) and the "ALL" row of each
+# metrics_test.csv (test), then mean and std over the seeds
 print("\n=== Computing Final Metrics ===")
 final_val_losses = []
 final_val_accs = []
@@ -105,11 +119,16 @@ final_val_err_vy = []
 
 all_train_losses = []
 all_val_losses = []
+epoch_times = {}   # seed -> median time per epoch (as in the report)
+peak_vram = {}     # seed -> mean peak GPU memory per epoch in GB (first epoch excluded)
 
 final_test_err_p = []
 final_test_err_v = []
+final_test_err_vx = []
+final_test_err_vy = []
 final_test_err_agg = []
 final_test_accs = []
+final_test_losses = []
 
 for seed in SEEDS:
     folder_name = f"{MODEL}_{RUN_NAME}_s{seed}{suffix_str}"
@@ -130,6 +149,9 @@ for seed in SEEDS:
         
         all_train_losses.append(df["train_loss"].values)
         all_val_losses.append(df["val_loss"].values)
+        if "epoch_time_s" in df.columns:
+            epoch_times[seed] = df["epoch_time_s"].median()
+            peak_vram[seed] = df["peak_vram_mb"].iloc[1:].mean() / 1000
 
     if RUN_TEST:
         test_csv = os.path.join(metrics_dir, "metrics_test.csv")
@@ -139,8 +161,11 @@ for seed in SEEDS:
             if not row.empty:
                 final_test_err_p.append(row.iloc[-1]["rel_error_pressure_pct"])
                 final_test_err_v.append(row.iloc[-1]["rel_error_velocity_pct"])
+                final_test_err_vx.append(row.iloc[-1]["rel_error_vx_pct"])
+                final_test_err_vy.append(row.iloc[-1]["rel_error_vy_pct"])
                 final_test_err_agg.append(row.iloc[-1]["rel_error_aggregate_pct"])
                 final_test_accs.append(row.iloc[-1]["accuracy_aggregate_pct"])
+                final_test_losses.append(row.iloc[-1]["l1_loss"])
 
 if len(final_val_losses) == len(SEEDS):
     mean_loss = np.mean(final_val_losses)
@@ -161,6 +186,12 @@ if RUN_TEST and len(final_test_accs) == len(SEEDS):
     std_err_p    = np.std(final_test_err_p)
     mean_err_v   = np.mean(final_test_err_v)
     std_err_v    = np.std(final_test_err_v)
+    mean_err_vx  = np.mean(final_test_err_vx)
+    std_err_vx   = np.std(final_test_err_vx)
+    mean_err_vy  = np.mean(final_test_err_vy)
+    std_err_vy   = np.std(final_test_err_vy)
+    mean_tloss   = np.mean(final_test_losses)
+    std_tloss    = np.std(final_test_losses)
     mean_err_agg = np.mean(final_test_err_agg)
     std_err_agg  = np.std(final_test_err_agg)
     mean_tacc    = np.mean(final_test_accs)
@@ -187,11 +218,17 @@ if len(final_val_losses) == len(SEEDS):
         summary_lines.append(f"Val Error Velocity Y (vy):   {mean_vvy:.2f}% +/- {std_vvy:.2f}%\n")
     else:
         summary_lines.append("")
-    
+    if epoch_times:
+        summary_lines.append("Time per epoch (median):     " + ", ".join(f"s{s}: {t:.1f}s" for s, t in epoch_times.items()))
+        summary_lines.append("Peak GPU memory:             " + ", ".join(f"s{s}: {m:.2f} GB" for s, m in peak_vram.items()) + "\n")
+
 if RUN_TEST and len(final_test_accs) == len(SEEDS):
     summary_lines.append("--- TESTING (Unseen Data) ---")
+    summary_lines.append(f"Test Loss (L1):              {mean_tloss:.6f} +/- {std_tloss:.6f}")
     summary_lines.append(f"Rel Error Pressure (%):      {mean_err_p:.2f}% +/- {std_err_p:.2f}%")
     summary_lines.append(f"Rel Error Velocity (%):      {mean_err_v:.2f}% +/- {std_err_v:.2f}%")
+    summary_lines.append(f"Rel Error Velocity X (%):    {mean_err_vx:.2f}% +/- {std_err_vx:.2f}%")
+    summary_lines.append(f"Rel Error Velocity Y (%):    {mean_err_vy:.2f}% +/- {std_err_vy:.2f}%")
     summary_lines.append(f"Rel Error Aggregate (%):     {mean_err_agg:.2f}% +/- {std_err_agg:.2f}%")
     summary_lines.append(f"Test Accuracy final:         {mean_tacc:.2f}% +/- {std_tacc:.2f}%\n")
 
@@ -201,6 +238,7 @@ print("\n" + "="*45)
 print(summary_text)
 print("="*45)
 
+# SAVE=1: summary written to metrics/<model>/summary_*.txt, SAVE=0: plot of the averaged loss curves
 if SAVE:
     model_parent_dir = os.path.join("metrics", MODEL)
     os.makedirs(model_parent_dir, exist_ok=True)
@@ -208,9 +246,9 @@ if SAVE:
 
     with open(summary_file, "w") as f:
         f.write(summary_text)
-    print(f"\nRecup saved in {summary_file}")
+    print(f"\nSummary saved in {summary_file}")
 else:
-    print("\n[INFO] SAVE=0: Nessun file di riepilogo testuale salvato su disco. Preparazione del grafico a schermo...")
+    print("\n[INFO] SAVE=0: no summary file saved, showing the plot instead...")
     
     if all_train_losses and all_val_losses:
         plt.figure(figsize=(10, 6))

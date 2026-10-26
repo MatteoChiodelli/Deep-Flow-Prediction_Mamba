@@ -4,13 +4,17 @@
 #
 # Main training script
 #
+# Modified by our group w.r.t. the original DFP repo:
+#  - the model is chosen by name (build_model in DfpNet.py) and passed on the command line,
+#    together with run name, seed and optional V-Mamba hyperparameters (see run_all_seeds.py / runTuning.py)
+#  - fixed seeds, optional fixed train/val split, mixed precision (AMP), more DataLoader workers
+#  - per-epoch metrics (relative errors per field, time, peak VRAM) saved to CSV + loss plot in metrics/
+#
 ################
 
 import os, sys, random, time
-################################################################################
 import csv
 import matplotlib.pyplot as plt
-#///////////////////////////////////////////////////////////////////////////////
 import numpy as np
 import torch
 import torch.nn as nn
@@ -18,9 +22,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 
-################################################################################
 from DfpNet import build_model, weights_init
-#///////////////////////////////////////////////////////////////////////////////
 import dataset
 import utils
 import torch.backends.cudnn as cudnn
@@ -39,8 +41,8 @@ lrG = 0.0006
 decayLr = True
 # channel exponent to control network size (runTuning.py passes it via DFP_EXPO)
 expo = int(os.environ.get("DFP_EXPO", 5))
-# data set config
-prop = [53830, 0.4964, 0.0, 0.5036] # by default, use all from "../data/train"
+# data set config: [total samples, fraction regular, fraction superimposed, fraction sheared]
+prop = [53830, 0.4964, 0.0, 0.5036]
 # save txt files with per epoch loss?
 saveL1 = False
 # fixed seed for the train/val split, so that all seeds are validated on the same samples.
@@ -48,7 +50,10 @@ saveL1 = False
 # 42 reproduces the split of the previous seed-42 runs for every seed
 split_seed = None
 
-################################################################################
+# Command line (called by run_all_seeds.py and runTuning.py):
+#   python runTrain.py <model_type> <run_name> <seed> [<tuning_dir>|default] [9 or 12 V-Mamba hyperparameters]
+# model_type is a key of MODEL_CONFIGS in DfpNet.py. The optional hyperparameters are
+# (ssm_d_state, ssm_ratio, mlp_ratio) for vmamba1, vmamba2, vmamba3 and, with 12 values, vmamba_decoder.
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
 run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
 seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
@@ -68,6 +73,7 @@ if len(extra_args) in (9, 12):
 elif len(extra_args) > 0:
     raise ValueError(f"Pass 9 or 12 hyperparametrers: {len(extra_args)}")
 
+# fixed seed if given (we always use 42, 1955, 2003), random otherwise as in the original script
 if seed_arg is not None:
     seed = seed_arg
 else:
@@ -84,7 +90,6 @@ print("Iterations: {}".format(iterations))
 print("Dropout: {}".format(dropout))
 print("Channel exponent: {}".format(expo))
 print("Split seed: {}".format(split_seed))
-#///////////////////////////////////////////////////////////////////////////////
 ##########################
 
 print("Random seed: {}".format(seed))
@@ -104,13 +109,12 @@ print("Validation batches: {}".format(len(valiLoader)))
 # setup training
 epochs = int(iterations/len(trainLoader) + 0.5)
 
-################################################################################
 if epochs < 1:
     epochs = 1
 
+# originally TurbNetG(...): now the network is built from its name (baseline or one of our variants)
 netG = build_model(model_type, channelExponent=expo, dropout=dropout, mamba_cfg=mamba_cfg)
 
-#///////////////////////////////////////////////////////////////////////////////
 print(netG) # print full net
 model_parameters = filter(lambda p: p.requires_grad, netG.parameters())
 params = sum([np.prod(p.size()) for p in model_parameters])
@@ -129,6 +133,7 @@ trainable_params = sum(p.numel() for p in netG.parameters() if p.requires_grad)
 print(f"Initialized {model_type} with {trainable_params:,} trainable params")
 
 optimizerG = optim.Adam(netG.parameters(), lr=lrG, betas=(0.5, 0.999), weight_decay=0.0)
+# added: mixed precision training to speed up the V-Mamba runs
 scaler = torch.cuda.amp.GradScaler()
 
 targets = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
@@ -136,9 +141,10 @@ inputs  = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
 targets = targets.cuda()
 inputs  = inputs.cuda()
 
-################################################################################
+# Output folder (added): metrics/<model>/<model>_<run>_s<seed>[_small]/, or metrics/<tuning_dir>/<run>/
+# when called by runTuning.py. "_small" marks runs on the reduced dataset (data/train_small).
 is_small = "small" in os.path.basename(os.path.normpath(data.dataDir))
-suffix_str = "_small" if is_small else ""   
+suffix_str = "_small" if is_small else ""
 
 if tuning_dir:
     metrics_dir = os.path.join("metrics", tuning_dir, run_name)
@@ -149,8 +155,9 @@ os.makedirs(metrics_dir, exist_ok=True)
 
 metrics_file = os.path.join(metrics_dir, "metrics_train.csv")
 plot_path = os.path.join(metrics_dir, "loss_curve_train.png")
-################################################################################
 
+# one CSV row per epoch. Relative error = sum|pred - target| / sum|target| (same definition as the
+# original runTest.py), "accuracy" = 1 - relative error
 with open(metrics_file, mode="w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow([
@@ -170,7 +177,6 @@ with open(metrics_file, mode="w", newline="") as f:
 
 history_train_loss = []
 history_val_loss = []
-#///////////////////////////////////////////////////////////////////////////////
 ##########################
 
 for epoch in range(epochs):
@@ -181,11 +187,10 @@ for epoch in range(epochs):
 
     netG.train()
     L1_accum = 0.0
-    
-################################################################################
+
+    # added: accumulators for the training relative error
     train_abs_diff_sum = 0.0
     train_target_sum = 0.0
-#///////////////////////////////////////////////////////////////////////////////
     for i, traindata in enumerate(trainLoader, 0):
         inputs_cpu, targets_cpu = traindata
         targets_cpu, inputs_cpu = targets_cpu.float().cuda(), inputs_cpu.float().cuda()
@@ -212,25 +217,21 @@ for epoch in range(epochs):
         lossL1viz = lossL1.item()
         L1_accum += lossL1viz
 
-################################################################################
         with torch.no_grad():
             train_abs_diff_sum += torch.sum(torch.abs(gen_out - targets))
             train_target_sum += torch.sum(torch.abs(targets))
-#///////////////////////////////////////////////////////////////////////////////
         if i==len(trainLoader)-1:
             logline = "Epoch: {}, batch-idx: {}, L1: {}\n".format(epoch, i, lossL1viz)
             print(logline)
 
-################################################################################
     epoch_train_loss = L1_accum / len(trainLoader)
     train_rel_error = train_abs_diff_sum.item() / max(train_target_sum.item(), 1e-8)
     train_acc_pct = max(0.0, (1.0 - train_rel_error) * 100.0)
-#///////////////////////////////////////////////////////////////////////////////
     # validation
     netG.eval()
     L1val_accum = 0.0
-    
-################################################################################
+
+    # added: accumulators for the validation relative error, total and per field (p, vx, vy)
     val_abs_diff_sum = 0.0
     val_target_sum = 0.0
     val_abs_diff_p = 0.0
@@ -241,7 +242,6 @@ for epoch in range(epochs):
     val_target_vy = 0.0
 
     with torch.no_grad():
-#///////////////////////////////////////////////////////////////////////////////        
         for i, validata in enumerate(valiLoader, 0):
             inputs_cpu, targets_cpu = validata
             targets_cpu, inputs_cpu = targets_cpu.float().cuda(), inputs_cpu.float().cuda()
@@ -253,7 +253,6 @@ for epoch in range(epochs):
             lossL1 = criterionL1(outputs, targets)
             L1val_accum += lossL1.item() * inputs.size(0)
             
-################################################################################
             val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
             val_target_sum += torch.sum(torch.abs(targets)).item()
 
@@ -265,12 +264,13 @@ for epoch in range(epochs):
             
             val_abs_diff_vy += torch.sum(torch.abs(outputs[:, 2, :, :] - targets[:, 2, :, :])).item()
             val_target_vy += torch.sum(torch.abs(targets[:, 2, :, :])).item()
-#///////////////////////////////////////////////////////////////////////////////
 
+            # changed: only one sample image at the last epoch, saved in the run folder
             if i == 0 and epoch == (epochs - 1):
                 outputs_cpu = outputs.data.cpu().numpy()
                 input_ndarray = inputs_cpu.cpu().numpy()[0]
-                # v_norm must come from the raw (un-normalized) inflow velocity
+                # changed: v_norm must come from the raw (un-normalized) inflow velocity, the original
+                # code used the normalized one
                 vx_max = np.max(np.abs(input_ndarray[0,:,:])) * data.max_inputs_0
                 vy_max = np.max(np.abs(input_ndarray[1,:,:])) * data.max_inputs_1
                 v_norm = ( vx_max**2 + vy_max**2 )**0.5
@@ -284,7 +284,7 @@ for epoch in range(epochs):
                 img_path = os.path.join(results_dir, "final_train_sample")
                 utils.imageOut(img_path, outputs_denormalized, targets_denormalized, saveTargets=True)
 
-################################################################################
+    # added: epoch time and peak GPU memory, used to compare the cost of the different models
     torch.cuda.synchronize()
     epoch_time_s = time.perf_counter() - epoch_start
     peak_vram_mb = torch.cuda.max_memory_allocated() / 1024**2
@@ -322,11 +322,10 @@ for epoch in range(epochs):
     history_train_loss.append(epoch_train_loss)
     history_val_loss.append(epoch_val_loss)
 
-#///////////////////////////////////////////////////////////////////////////////
-
+# changed: weights are saved in the run folder instead of the working directory
 torch.save(netG.state_dict(), os.path.join(metrics_dir, prefix + "modelG"))
-################################################################################
 
+# added: train/validation loss curve
 plt.figure(figsize=(9, 5))
 plt.plot(range(1, epochs + 1), history_train_loss, label="Train Loss (L1)", color="#1f77b4", linewidth=2)
 plt.plot(range(1, epochs + 1), history_val_loss, label="Validation Loss (L1)", color="#ff7f0e", linestyle="--", linewidth=2)
@@ -343,4 +342,3 @@ plt.close()
 print(f"\nTraining completed.")
 print(f"Metrics saved in: {metrics_file}")
 print(f"Plot saved in:  {plot_path}")
-#///////////////////////////////////////////////////////////////////////////////

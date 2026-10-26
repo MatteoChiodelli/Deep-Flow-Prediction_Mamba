@@ -4,6 +4,10 @@
 #
 # Dataset handling
 #
+# Small changes by our group w.r.t. the original DFP repo:
+#  - optional splitSeed, to get the same train/validation split independently of the training seed
+#  - default values for the normalization maxima (overwritten by LoaderNormalizer)
+#
 ################
 
 from torch.utils.data import Dataset
@@ -206,7 +210,7 @@ class TurbDataset(Dataset):
     TRAIN = 0
     TEST  = 2
 
-    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train/", dataDirTest="../data/test/", shuffle=0, normMode=0, splitSeed=None): #HERE
+    def __init__(self, dataProp=None, mode=TRAIN, dataDir="../data/train/", dataDirTest="../data/test/", shuffle=0, normMode=0, splitSeed=None): #HERE: set dataDir to "../data/train_small/" for the small dataset runs
         global makeDimLess, removePOffset
         """
         :param dataProp: for split&mix from multiple dirs, see LoaderNormalizer; None means off
@@ -232,6 +236,7 @@ class TurbDataset(Dataset):
         self.dataDirTest = dataDirTest # only for mode==self.TEST
 
         # load & normalize data
+        # (added: defaults, the actual maxima are set in LoaderNormalizer)
         self.max_targets_0 = 1.0
         self.max_targets_1 = 1.0
         self.max_targets_2 = 1.0

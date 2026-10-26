@@ -4,6 +4,10 @@
 #
 # CNN setup and data normalization
 #
+# The original part of this file goes from weights_init to TurbNetD (unchanged).
+# Everything after TurbNetD ("Novelty" section) was written by our group: V-Mamba and self-attention
+# blocks, the configurable TurbNet and build_model(), used by all our training/test scripts.
+#
 ################
 
 
@@ -12,10 +16,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import warnings
 
-###############
-# 
-# Modifications for introduction of self attention / mamba blocks
-# Adaptive based on local/gpu requirements.txt
+############### (ours)
+#
+# Optional imports for the Mamba blocks, so the file also works on machines without them
+# (see requirements_local.txt for CPU and requirements_vm.txt for GPU)
 
 # Checking Mamba standard (1D) GPU
 try:
@@ -26,14 +30,14 @@ except ImportError:
 
 # Checking V-Mamba (Selective Scan 2D) GPU
 try:
-    # Importive selective_scan from MambaV repo for 2D scanning
-    from vmamba import VSSBlock  
+    # VSSBlock from the VMamba repo (vmamba.py), 2D selective scan
+    from vmamba import VSSBlock
     HAS_VMAMBA = True
-except ImportError:
+except (ImportError, NameError):  # vmamba.py raises NameError when triton is not installed
     HAS_VMAMBA = False
 
 if torch.cuda.is_available():
-    print(f"[INFO] CUDA avaible. Mamba-1D: {HAS_MAMBA} | V-Mamba (SS2D): {HAS_VMAMBA}")
+    print(f"[INFO] CUDA available. Mamba-1D: {HAS_MAMBA} | V-Mamba (SS2D): {HAS_VMAMBA}")
     if HAS_VMAMBA:
         # vmamba silently falls back to slow PyTorch kernels when the CUDA/Triton ones are missing
         import os, shutil
@@ -45,7 +49,7 @@ if torch.cuda.is_available():
             cross_backend += " - ERROR: no C compiler found (install gcc), V-Mamba forward will fail"
         print(f"[INFO] V-Mamba selective scan: {scan_backend} | cross-scan: {cross_backend}")
 else:
-    print("[WARNING] CUDA not avaible. Mamba blocks forced on CPU.")
+    print("[WARNING] CUDA not available. Mamba blocks forced on CPU.")
 #################
 
 
@@ -154,8 +158,10 @@ class TurbNetD(nn.Module):
         return h
 
 
-# Novelty ----------------------------------------------------------------------------------------------------------------------------------------
+# Novelty (our code from here on) ----------------------------------------------------------------------------------------------------------------
 
+# Wrapper around the VSSBlock of VMamba (2D selective scan over the feature map + MLP, with residuals).
+# Input and output have the same shape [B, C, H, W], so it can be inserted after any U-Net stage.
 class VMamba_Block(nn.Module):
     def __init__(self, in_channels,ssm_d_state=16,ssm_ratio=2,ssm_conv=1,mlp_ratio=4):
         super().__init__()
@@ -175,7 +181,8 @@ class VMamba_Block(nn.Module):
 
 
 class MultiHeadSelfAttention2d(nn.Module):
-    #Multi-head self-attention applied to a 2D feature map
+    # Multi-head self-attention applied to a 2D feature map (pre-LayerNorm + residual).
+    # Used as the attention counterpart of VMamba_Block in the comparisons.
 
     def __init__(self, channels, num_heads=8, dropout=0.):
         super().__init__()
@@ -226,6 +233,14 @@ STAGE_CHANNELS = {"in": None, "out1": 1, "out2": 2, "out2b": 2, "out3": 4, "out4
                   "dout6": 8, "dout5": 8, "dout4": 4, "dout3": 2, "dout2b": 2, "dout2": 1}
 
 # model name -> {stage: mixer type}
+# Mixer types (built in TurbNet._add_mixer):
+#   vmamba_big   default VSSBlock (d_state 16, ssm_ratio 2, mlp_ratio 4)
+#   vmamba_small lighter block (d_state 8, ssm_ratio 1, mlp_ratio 2)
+#   vmamba_head / vmamba_huge   bigger variants used in MambaMentality / MambaHead
+#   vmamba1, vmamba2, vmambad2, vmamba3, vmamba_decoder, vmambamono   blocks with tunable hyperparameters
+#                (defaults in TurbNet.__init__, can be overridden with mamba_cfg, see runTuning.py)
+#   attention    MultiHeadSelfAttention2d
+# The comments next to the exploratory models are our notes on their results.
 MODEL_CONFIGS = {
     # Original variants, kept identical to reproduce previous runs and load their checkpoints
     "baseline":  {},
@@ -258,7 +273,8 @@ MODEL_CONFIGS["HMdec_d2_d2b"]   = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2b
 MODEL_CONFIGS["HMdec_d2_d2b_d3"] = {**_HALF_MAMBA, "dout2": "vmamba_big", "dout2b": "vmamba_big", "dout3": "vmamba_big"}  # full mirror (+16x16)
 
 
-# Final configs
+# Final configs: same structure as halfMamba but with tunable blocks. HalfMamba_Augmented also has a
+# block on the first decoder stage at 64x64 (dout2); its out2 block uses the tuned values of vmambad2.
 MODEL_CONFIGS["HalfMamba"] = {"out1": "vmamba1", "out2": "vmamba2", "out2b": "vmamba3"}
 MODEL_CONFIGS["HalfMamba_Augmented"] = {"out1": "vmamba1", "out2": "vmambad2", "out2b": "vmamba3", "dout2": "vmamba_decoder"}
 MODEL_CONFIGS["HalfMamba24_2_2"] = {"out1":"vmamba1", "out2":"vmambad2", "out2b":"vmamba3"}
@@ -275,6 +291,7 @@ class TurbNet(nn.Module):
         self.num_heads = num_heads
         self.attention_dropout = attention_dropout
 
+        # hyperparameters of the tunable V-Mamba blocks, mamba_cfg (from runTrain.py args) overrides them
         default_cfg = {
             "vmambamono":        {"ssm_d_state": 16, "ssm_ratio": 4, "mlp_ratio": 4},
             "vmamba1":        {"ssm_d_state": 16, "ssm_ratio": 2, "mlp_ratio": 4},
@@ -286,6 +303,11 @@ class TurbNet(nn.Module):
         if mamba_cfg:
             # fail loudly instead of silently training the default block (e.g. 12 params passed to "HalfMamba")
             used = set(mixers.values())
+            # runTrain.py / runTuning.py always call the out2 block "vmamba2"; in HalfMamba_Augmented (and
+            # HalfMamba24_2_2) that block is "vmambad2" (name kept so the saved weights still load)
+            if mamba_cfg.get("vmamba2") is not None and "vmamba2" not in used and "vmambad2" in used:
+                mamba_cfg = dict(mamba_cfg)
+                mamba_cfg["vmambad2"] = mamba_cfg.pop("vmamba2")
             for k, v in mamba_cfg.items():
                 if v is None:
                     continue
@@ -299,6 +321,8 @@ class TurbNet(nn.Module):
                 default_cfg[k].update(v)
         self.mamba_cfg = default_cfg
 
+        # module name of each mixer, e.g. "layer_vmamba_big_out1". The names must not change,
+        # otherwise the saved checkpoints can no longer be loaded
         kinds = list(mixers.values())
         self.mixer_names = {
             stage: f"layer_{kind}" if kinds.count(kind) == 1 else f"layer_{kind}_{stage}"
@@ -307,6 +331,7 @@ class TurbNet(nn.Module):
         self._mixers = mixers
         self._channels = channels
 
+        # same layers as TurbNetG; after each one a mixer is added if the config asks for it
         self._add_mixer("in")
         self.layer1 = nn.Sequential()
         self.layer1.add_module('layer1_conv', nn.Conv2d(3, channels, 4, 2, 1, bias=True))
@@ -342,6 +367,7 @@ class TurbNet(nn.Module):
         self.dlayer1.add_module('dlayer1_relu', nn.ReLU(inplace=True))
         self.dlayer1.add_module('dlayer1_tconv', nn.ConvTranspose2d(channels*2, 3, 4, 2, 1, bias=True))
 
+    # creates the mixer block for a stage (if any) with the right number of channels
     def _add_mixer(self, stage):
         kind = self._mixers.get(stage)
         if kind is None:
@@ -369,10 +395,12 @@ class TurbNet(nn.Module):
             raise ValueError(f"Unknown mixer type: {kind}")
         self.add_module(self.mixer_names[stage], block)
 
+    # applies the mixer of a stage, identity if the stage has none
     def _mix(self, stage, x):
         name = self.mixer_names.get(stage)
         return x if name is None else getattr(self, name)(x)
 
+    # same forward as TurbNetG, with _mix() after every stage (identity for the baseline)
     def forward(self, x):
         x    = self._mix("in",    x)
         out1 = self._mix("out1",  self.layer1(x))
@@ -398,6 +426,8 @@ class TurbNet(nn.Module):
         return dout1
 
 
+# entry point used by all the scripts: builds the network from its name in MODEL_CONFIGS
+# ("baseline" has no mixers and is equivalent to the original TurbNetG)
 def build_model(model_type, channelExponent=6, dropout=0., mamba_cfg=None):
     if model_type not in MODEL_CONFIGS:
         raise ValueError(f"Unknown Model: {model_type}. Available: {list(MODEL_CONFIGS)}")

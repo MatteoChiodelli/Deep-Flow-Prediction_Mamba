@@ -6,6 +6,9 @@
 # on a CPU. This is convenient for quick testing on non-GPU machines.
 # If you have a GPU, the runTest.py script is strongly recommended instead.
 #
+# Modified by our group with the same changes as runTest.py (model chosen by name + run name + seed,
+# metrics CSV and bar plot), used together with runTrainCpu.py.
+#
 ################
 
 import os, sys, random, math
@@ -21,6 +24,7 @@ from dataset import TurbDataset
 import utils
 from utils import log
 
+# usage: python runTestCpu.py <model_type> <run_name> <seed>   (same as runTrainCpu.py)
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
 run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
 seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
@@ -54,7 +58,7 @@ netG = build_model(model_type, channelExponent=expo)
 lf = "./" + prefix + "testout{}.txt".format(suffix) 
 utils.makeDirs(["results_test"])
 
-################################################################################
+# added: output folder and per-sample metrics CSV (same columns as runTest.py)
 is_small = True  #HERE
 suffix_str = "_small" if is_small else ""
 
@@ -63,7 +67,6 @@ os.makedirs(metrics_dir, exist_ok=True)
 
 metrics_file = os.path.join(metrics_dir, "metrics_test.csv")
 plot_path    = os.path.join(metrics_dir, "error_plot_test.png")
-################################################################################
 
 with open(metrics_file, mode="w", newline="") as f:
     writer = csv.writer(f)
@@ -172,14 +175,12 @@ for si in range(25):
                 max(0.0, (1.0 - lossPer.item()) * 100.0)
             ])
 
-################################################################
         if i == 0:
             results_dir = os.path.join(metrics_dir, "results")
             os.makedirs(results_dir, exist_ok=True)
             
             img_path = os.path.join(results_dir, "final_test_sample")
             utils.imageOut(img_path, outputs_cpu, targets_cpu, normalize=False, saveMontage=True)
-# --------------------------------------------------------------
     log(lf, "\n")
     n_samples = len(testLoader)
     L1val_accum     /= n_samples

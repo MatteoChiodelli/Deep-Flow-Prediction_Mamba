@@ -1,1 +1,0 @@
-epoch,train_loss,val_loss,train_rel_error,val_rel_error,train_accuracy_pct,val_accuracy_pct,val_err_p,val_err_vx,val_err_vy,epoch_time_s,peak_vram_mb

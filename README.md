@@ -1,73 +1,145 @@
-# Intro
-This is an expansion on the research done by the Deep-Flow-Prediction repository.
-The objective is to expand the U-net proposed in that paper, in particular using various integration of the MAMBA architecture
+# Mamba-Augmented U-Nets for Fast RANS Flow Prediction Around Airfoils
 
-# Research Questions & Architectural Exploration Matrix
+Code of the project report of Group 61, Deep Machine Learning (Chalmers): Ignazio Spaccavento, Matteo Chiodelli.
 
-This document outlines the Research Questions (RQ), the configuration matrix, and the methodological directions for evaluating **State Space Models (Mamba)** and **Self-Attention** blocks integrated into the **TurbNet** architecture for 2D aerodynamic field estimation (CFD).
+We add VMamba blocks (2D selective scan, SS2D) and, for comparison, multi-head self-attention blocks to the
+U-Net (TurbNet) of Thuerey et al., *Deep learning methods for Reynolds-averaged Navier-Stokes simulations of
+airfoil flows* (AIAA J., 2020). The code builds on their public repository
+(<https://github.com/thunil/Deep-Flow-Prediction>, Apache 2.0, see `LICENSE`); the `VSSBlock` comes from the
+official VMamba repository (<https://github.com/MzeroMiko/VMamba>).
 
----
+## Files
 
-## 1. Research Questions (RQ)
+All the code is in `train/` and must be run from that folder.
 
-* **RQ1 (Full Hybrid - Multiscale Context):** Does coupling high-resolution Mamba (early layers, linear $\mathcal{O}(N)$ complexity to capture long dependencies) with low-resolution Self-Attention (bottleneck for condensed global correlations) outperform both the purely convolutional baseline and single-module hybrid models?
-* **RQ2 (High-Resolution SSM):** Does leveraging Mamba's linear scalability on high-resolution layers ($64 \times 64$ or $128 \times 128$) improve the propagation of wake and pressure gradient information compared to the purely local receptive field of convolutions?
-* **RQ3 (Bottleneck SSM):** Does a Mamba block positioned exclusively in the deep bottleneck (short sequence, strong abstraction) offer computational or qualitative advantages over just using original convolutional blocks?
-* **RQ4 (Bottleneck Attention Benchmark):** Does the standard Multi-Head Self-Attention block at the bottleneck represent an upper or lower bound compared to an SSM-based bottleneck at parity of resolution and parameters?
-* **RQ5 (Inductive Bias Trade-off: Conv vs Sequence):** Does the progressive replacement of convolutional layers in favor of purely sequential blocks degrade the reconstruction of the boundary layer (airfoil surface boundary) or preserve geometric coherence?
-* **RQ6 (Non-Raster & Physics-Informed 2D Scanning Strategies):** *[Exploratory / High-Impact]* The standard raster scan (row-by-row / 2D bidirectional scan) imposes an artificial discontinuity in 2D dimensionality. Does an alternative spatial linearization strategy — space-filling curves (e.g., **Hilbert/Peano curves**) or a physics-informed scan along the prevalent flow direction (streamline/aerodynamic-aligned scan) — better preserve local spatial correlation and wake dynamics compared to the standard raster?
+| File | Origin | Content |
+|---|---|---|
+| `DfpNet.py` | original + ours | Original U-Net (`TurbNetG`) unchanged. Everything after `TurbNetD` is ours: `VMamba_Block`, `MultiHeadSelfAttention2d`, the configurable `TurbNet`, `MODEL_CONFIGS` (all the tested models) and `build_model()` |
+| `dataset.py` | original, small changes | Data loading and normalization (optional fixed train/val split seed) |
+| `utils.py` | original, unchanged | Learning-rate schedule, image output |
+| `runTrain.py` | original, modified | Training: model chosen by name, fixed seeds, mixed precision, per-epoch metrics (CSV) and loss plot |
+| `runTest.py` | original, modified | Test set evaluation: per-sample and test-set relative errors (CSV), bar plot |
+| `runTrainCpu.py`, `runTestCpu.py` | original, modified | CPU versions, used only at the start to check that the pipeline worked |
+| `run_all_seeds.py` | ours | Trains and tests one model with seeds 42, 1955, 2003 and writes mean ± std |
+| `runTuning.py` | ours | Hyperparameter search for the V-Mamba blocks (one training per configuration) |
+| `generate_comparison_BigDataset.py` | ours | Test-set comparison table for several models (superseded by `run_all_seeds.py`, included for completeness) |
+| `compare_models.py` | ours | Table of the single-seed runs on the reduced set (Table I and Fig. 3 of the report) |
+| `vmamba.py` | VMamba repo | `VSSBlock` and selective-scan code |
 
----
+The comments in the files that come from the original repository mark what we changed.
 
-## 2. Experimental Configurations
+## Setup
 
-| Config ID | Architecture | High-Res Stages ($128^2 / 64^2$) | Bottleneck ($4^2 / 2^2$) | Conv Layers | Mamba Scanning Mode | Main Objective |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **C0** | **Baseline TurbNet** | Standard Convolutions | Standard Convolutions | Standard (All) | N/A | Reference benchmark |
-| **C1** | **Hybrid Mamba + Attention** | **Mamba 2D** | **Self-Attention** | Mixed | Standard 2D Bidirectional | Extended multiscale model (RQ1) |
-| **C2** | **Early Mamba Only** | **Mamba 2D** | Standard Convolutions | Standard Conv | Standard 2D Bidirectional | High-res $\mathcal{O}(N)$ scalability (RQ2) |
-| **C3** | **Bottleneck Mamba Only** | Standard Convolutions | **Mamba 2D** | Standard Conv | Standard 2D Bidirectional | SSM on compact sequences (RQ3) |
-| **C4** | **Bottleneck Attention Only**| Standard Convolutions | **Self-Attention** | Standard Conv | N/A | Classic Transformer benchmark (RQ4) |
-| **C5** | **Conv-Free / Minimal Conv**| Mamba / Attention | Mamba / Attention | Minimized | Standard 2D Bidirectional | Local inductive bias study (RQ5) |
-| **C6** | **Mamba Geometry/Flow-Aware**| **Mamba 2D (Advanced)** | Best Setup Choice | Standard / Mixed | **Hilbert Curve / Streamwise Scan** | Anisotropic 2D linearization for CFD (RQ6) |
+GPU (all our runs: one NVIDIA L4, Linux, Python 3.11, CUDA 12):
 
----
+```
+pip install -r requirements_vm.txt
+```
 
-## 3. 2D Mamba Scanning Focus (RQ6 Detail)
+This installs the `mamba-ssm` CUDA selective-scan kernel and Triton, which also needs a C compiler (`gcc`).
+Without them `vmamba.py` falls back to a much slower PyTorch implementation.
+`requirements_local.txt` is a CPU-only environment, enough for the baseline and for the CPU scripts.
 
-1. **Standard Raster Scan (2D Baseline):**
-   * *Mechanism:* Horizontal scan $\rightarrow$ Vertical scan (and inverse bidirectional).
-   * *Limitation:* Two vertically adjacent pixels $(x, y)$ and $(x, y+1)$ are separated by a sequential distance equal to $W$ (channel width).
-2. **Hilbert Space-Filling Curve:**
-   * *Mechanism:* Fractal $2\text{D} \rightarrow 1\text{D}$ mapping that preserves topological proximity (two close points in space remain almost always close along the curve).
-   * *CFD Advantage:* Keeps local isotropic turbulent correlation intact on vortices and rapid pressure variations.
-3. **Streamwise / Directional Scan:**
-   * *Mechanism:* Sequential ordering oriented along the main flow axis (left-to-right, from upstream to downstream of the airfoil).
-   * *CFD Advantage:* Reflects the hyperbolic/parabolic nature of mass and momentum transport in the fluid flow field.
+## Data
 
----
+We use the data sets of the original repository:
 
-## 4. Training & Comparison Protocol
+* full set, 53.8k samples + 90 test samples: <https://dataserv.ub.tum.de/s/m1459172/download?path=%2F&files=data_full.tar.gz>
+* reduced set, 6.4k samples + test samples: <https://dataserv.ub.tum.de/s/m1470791/download?path=%2F&files=data_6k.tar.gz>
 
-* **Dataset:** Subset of ~6.4k samples for exploration and configuration screening; full dataset reserved for the final model.
-* **Fixed Hyperparameters (Iso-hyperparameters):**
-  * $\text{Batch Size} = 10$.
-  * Adam optimizer with original schedule and learning rate ($0.0006$).
-  * Identical maximum number of epochs with best model saving based on validation loss (Early Stopping checkpoint).
-* **Parametric Constraint (Iso-capacity):**
-  * Trainable parameters for each variant must remain comparable to the baseline 
-* **Multi-Seed Validation:**
-  * 3 fixed seeds (`42`, `1955`, `2003`) for the final configurations, reporting metrics in $\text{Mean} \pm \text{Std}$ format.
-* **Target Metrics:**
-  * **Relative $L_1$ Error** for $u_x$, $u_y$, $p$ and cumulative.
-  * Peak VRAM footprint (MB/GB).
-  * Temporal throughput (seconds/epoch).
+Expected layout:
 
----
+```
+data/train/reg/      regular airfoils (full set)
+data/train/shear/    sheared airfoils (full set)
+data/train/sup/      superimposed airfoils, not used (prop[2] = 0) but the folder must exist, can be empty
+data/train_small/    reduced set, all files in one folder
+data/test/           90 test samples
+```
 
-## 5. Current Status (Baseline Replication)
+The scripts load the whole training set in memory (about 42 GB for the full set).
 
-Currently, the pipeline is set up to replicate the benchmark results of the original model (**Baseline C0**) with 3 different seedings. 
-* **Parameters:** Using the exact hyperparameters provided by the original repository.
-* **Dataset:** Training is executed on the local reduced dataset (`train_small`, containing approximately 5,000-6,000 samples).
-* **Metrics Output:** Epoch-by-epoch results, relative percentage errors, and loss function plots are automatically saved in the `metrics/` directory.
+## Models
+
+Models are selected by name, i.e. a key of `MODEL_CONFIGS` in `DfpNet.py`. Each entry says after which
+U-Net stage a block is inserted (`out1` ... `out5` encoder, `dout2` ... `dout6` decoder) and which block.
+
+| Report | Name in `MODEL_CONFIGS` |
+|---|---|
+| Baseline (TurbNet) | `baseline` |
+| MonoMamba (final) | `MonoMamba` |
+| HalfMamba-Augmented (final) | `HalfMamba_Augmented` |
+| Position sweep, one block per stage (Fig. 3) | `M_out1` ... `M_out5`, `A_out1` ... `A_out5` |
+| Table I, #2 / #3 (HalfMamba) | `MM____` / `halfMamba` |
+| Table I, #4 / #5 / #6 / #7 | `MMMA__` / `halfMambaPush` / `MMAA__` / `MMM_AA` |
+| Table I, #8 (all stages) | `fullMamba` |
+| Table I, #9 / #10 (decoder blocks) | `HMdec_d2` / `HMdec_d2_d2b`, `HMdec_d2_d2b_d3` |
+| Table I, #12 (block on the raw input) | `MambaMentality` |
+
+Table I, #11 (HalfMamba with the depthwise convolution inside the VSS block) is `halfMamba` with
+`ssm_conv=3` instead of the default `ssm_conv=1` in `VMamba_Block`.
+
+The tuned hyperparameters (d_state, ssm_ratio, mlp_ratio) are the defaults in `TurbNet.__init__`:
+(16, 4, 4) for MonoMamba and (16, 2, 4), (24, 2, 2), (16, 2, 4), (32, 2, 4) for the blocks of
+HalfMamba-Augmented at out1, out2, out2b, dout2.
+
+## Running
+
+All commands from `train/`.
+
+**Final comparison on the full set (Table II of the report).** With the default settings (full set, 400k
+iterations = 75 epochs, `BIG = 1`, `RUN_TEST = 1`):
+
+```
+python run_all_seeds.py baseline
+python run_all_seeds.py MonoMamba
+python run_all_seeds.py HalfMamba_Augmented
+```
+
+Each call trains and tests the model with seeds 42, 1955 and 2003 and writes
+`metrics/<model>/summary_<model>_BigDataset.txt` (validation and test metrics, mean ± std over the seeds).
+
+**Single run.**
+
+```
+python runTrain.py <model> <run_name> <seed>
+python runTest.py  <model> <run_name> <seed>
+```
+
+Outputs go to `metrics/<model>/<model>_<run_name>_s<seed>/`: `metrics_train.csv` (one row per epoch: train/val
+loss, relative errors per field, time, peak VRAM), `loss_curve_train.png`, the weights `*_modelG`,
+`metrics_test.csv` and a sample prediction image in `results/`.
+
+**Exploration on the reduced set (Fig. 3, Table I).** In `dataset.py` set the default `dataDir` to
+`"../data/train_small/"` (marked with `#HERE`), in `runTrain.py` set `prop = None` and `iterations = 90000`
+(150 epochs), and in `runTest.py` set `prop = None`. Then e.g. `python runTrain.py M_out1 posSweep 42`.
+The run folders get a `_small` suffix; in `run_all_seeds.py` set `BIG = 0`. The run names we used are listed
+in `compare_models.py`; once the runs exist, `python compare_models.py` builds Table I and the data of Fig. 3
+(validation L1 over the last 10 epochs, median time per epoch, peak GPU memory) in `comparison_table.csv`.
+
+**Hyperparameter tuning.** Set `MODEL_TYPE` and the list `EXPERIMENTS` in `runTuning.py` (one row = d_state,
+ssm_ratio, mlp_ratio for each tunable block) and run `python runTuning.py`. Every configuration is trained once
+(seed 42) and summarized in `metrics/Tuning_<TUNING_LAYER>/summary_<MODEL_TYPE>_<TUNING_LAYER>.csv`, sorted by
+the validation error over the last 20 epochs. Our tuning was done on the reduced set.
+
+## Metrics
+
+The relative error of a field c is sum|prediction - target| / sum|target| on the normalized fields, for
+c = p, vx, vy and all channels together (aggregate error); accuracy = 100% - aggregate error.
+
+* Validation (`runTrain.py`, every epoch): sums over the 400 validation samples.
+* Test (`runTest.py`, `ALL` row of `metrics_test.csv`): sums over the 90 test samples. These are the values
+  in the report. On a fixed set this error is proportional to the L1 loss, so both give the same ranking.
+  The log file of `runTest.py` also prints the per-sample average of the original code (mean over the
+  samples of the per-sample relative error), which gives somewhat different numbers.
+* Time per epoch in the report: median of `epoch_time_s` in `metrics_train.csv`; peak GPU memory: mean of
+  `peak_vram_mb` (first epoch excluded) / 1000. Both are printed by `run_all_seeds.py` and `compare_models.py`.
+  Runs use mixed precision and cuDNN autotuning, so a re-run gives close but not bit-identical numbers.
+
+Expected test results on the full set (relative errors in %, mean ± std over 3 seeds):
+
+| Model | Params | p | vx | vy | Aggregate |
+|---|---|---|---|---|---|
+| baseline | 2.33 M | 14.51 ± 1.38 | 1.81 ± 0.17 | 6.34 ± 0.60 | 3.06 ± 0.29 |
+| MonoMamba | 2.38 M | 12.99 ± 0.54 | 1.62 ± 0.10 | 5.67 ± 0.57 | 2.74 ± 0.19 |
+| HalfMamba_Augmented | 2.57 M | 12.48 ± 0.53 | 1.55 ± 0.06 | 5.23 ± 0.14 | 2.60 ± 0.09 |

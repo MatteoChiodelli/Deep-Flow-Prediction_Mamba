@@ -3,16 +3,21 @@
 # Deep Flow Prediction - N. Thuerey, K. Weissenov, H. Mehrotra, N. Mainali, L. Prantl, X. Hu (TUM)
 #
 # Compute errors for a test set and visualize. This script can loop over a range of models in 
-# order to compute an averaged evaluation. 
+# order to compute an averaged evaluation.
+#
+# Modified by our group w.r.t. the original DFP repo:
+#  - model chosen by name + run name + seed on the command line (same arguments as runTrain.py)
+#  - weights loaded from the run folder of runTrain.py
+#  - per-sample errors and the relative errors over the whole test set (the values in the report) saved to
+#    metrics/<model>/<run folder>/metrics_test.csv, plus a bar plot
+#  - inference under torch.no_grad() and division by zero guarded with eps
 #
 ################
 
 import os,sys,random,math
 import numpy as np
-########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
 import csv
 import matplotlib.pyplot as plt
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -24,7 +29,7 @@ from DfpNet import build_model, weights_init
 import utils
 from utils import log
 
-########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+# usage: python runTest.py <model_type> <run_name> <seed>   (same as runTrain.py)
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
 run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
 seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
@@ -36,8 +41,8 @@ else:
 
 prefix = f"{model_type}_{run_name}_s{seed}_"
 suffix = ""
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 expo = 5
+# changed: same prop as runTrain.py, so the normalization constants come from the same training data
 prop = [53830, 0.4964, 0.0, 0.5036]
 dataset = TurbDataset(prop, mode=TurbDataset.TEST, dataDirTest="../data/test/")
 testLoader = DataLoader(dataset, batch_size=1, shuffle=False)
@@ -60,7 +65,7 @@ netG = build_model(model_type, channelExponent=expo)
 lf = "./" + prefix + "testout{}.txt".format(suffix) 
 utils.makeDirs(["results_test"])
 
-#################################################################################
+# added: test metrics go in the same run folder used by runTrain.py
 is_small = "small" in os.path.basename(os.path.normpath(dataset.dataDir))
 suffix_str = "_small" if is_small else ""
 
@@ -69,29 +74,30 @@ os.makedirs(metrics_dir, exist_ok=True)
 
 metrics_file = os.path.join(metrics_dir, "metrics_test.csv")
 plot_path    = os.path.join(metrics_dir, "error_plot_test.png")
-################################################################################
 
-if not os.path.isfile(metrics_file):
-    with open(metrics_file, mode="w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "model",
-            "sample_id",
-            "l1_loss",
-            "l1_loss_denormalized",
-            "rel_error_pressure_pct",
-            "rel_error_velocity_pct",
-            "rel_error_aggregate_pct",
-            "accuracy_pressure_pct",
-            "accuracy_velocity_pct",
-            "accuracy_aggregate_pct"
-        ])
+# rewritten at every run, so re-running a test does not append duplicate rows
+with open(metrics_file, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        "model",
+        "sample_id",
+        "l1_loss",
+        "l1_loss_denormalized",
+        "rel_error_pressure_pct",
+        "rel_error_velocity_pct",
+        "rel_error_aggregate_pct",
+        "accuracy_pressure_pct",
+        "accuracy_velocity_pct",
+        "accuracy_aggregate_pct",
+        "rel_error_vx_pct",
+        "rel_error_vy_pct"
+    ])
 
 plot_model_names = []
 plot_err_p = []
 plot_err_v = []
 plot_err_agg = []
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 # loop over different trained models
 avgLoss = 0.
 losses = []
@@ -101,7 +107,10 @@ for si in range(25):
     s = chr(96+si)
     if(si==0): 
         s = "" # check modelG, and modelG + char
-    modelFn = "./" + prefix + "modelG{}{}".format(suffix,s)
+    # changed: runTrain.py saves the weights in the run folder, the original location (working dir) is the fallback
+    modelFn = os.path.join(metrics_dir, prefix + "modelG{}{}".format(suffix,s))
+    if not os.path.isfile(modelFn):
+        modelFn = "./" + prefix + "modelG{}{}".format(suffix,s)
     if not os.path.isfile(modelFn):
         continue
 
@@ -118,6 +127,10 @@ for si in range(25):
     lossPer_p_accum = 0
     lossPer_v_accum = 0
     lossPer_accum = 0
+    # added: sums of |error| and |target| over the whole test set for p, vx, vy and all channels
+    # (same definition as the validation error in runTrain.py; these are the values in the report)
+    abs_diff_sum = np.zeros(4)
+    abs_target_sum = np.zeros(4)
 
     netG.eval()
 
@@ -127,17 +140,15 @@ for si in range(25):
         inputs.data.resize_as_(inputs_cpu).copy_(inputs_cpu)
         targets.data.resize_as_(targets_cpu).copy_(targets_cpu)
 
-########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
         with torch.no_grad():
             outputs = netG(inputs)
             lossL1 = criterionL1(outputs, targets)
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////        
         outputs_cpu = outputs.data.cpu().numpy()[0]
         targets_cpu = targets_cpu.cpu().numpy()[0]
 
-########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
         L1val_accum += lossL1.item()
 
+        # relative error per field as in the original code (ratio of sums); changed: eps avoids division by zero
         eps = 1e-8
         lossPer_p = np.sum(np.abs(outputs_cpu[0] - targets_cpu[0])) / max(np.sum(np.abs(targets_cpu[0])), eps)
         lossPer_v = (np.sum(np.abs(outputs_cpu[1] - targets_cpu[1])) + np.sum(np.abs(outputs_cpu[2] - targets_cpu[2]))) / max(
@@ -145,10 +156,17 @@ for si in range(25):
         )
         lossPer = np.sum(np.abs(outputs_cpu - targets_cpu)) / max(np.sum(np.abs(targets_cpu)), eps)
 
+        abs_diff = np.abs(outputs_cpu - targets_cpu)
+        abs_target = np.abs(targets_cpu)
+        abs_diff_sum   += [abs_diff[0].sum(), abs_diff[1].sum(), abs_diff[2].sum(), abs_diff.sum()]
+        abs_target_sum += [abs_target[0].sum(), abs_target[1].sum(), abs_target[2].sum(), abs_target.sum()]
+        lossPer_vx = abs_diff[1].sum() / max(abs_target[1].sum(), eps)
+        lossPer_vy = abs_diff[2].sum() / max(abs_target[2].sum(), eps)
+
         lossPer_p_accum += lossPer_p.item()
         lossPer_v_accum += lossPer_v.item()
         lossPer_accum += lossPer.item()
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
         log(lf, "Test sample %d"% i )
         log(lf, "    pressure:  abs. difference, ratio: %f , %f " % (np.sum(np.abs(outputs_cpu[0] - targets_cpu[0])), lossPer_p.item()) )
         log(lf, "    velocity:  abs. difference, ratio: %f , %f " % (np.sum(np.abs(outputs_cpu[1] - targets_cpu[1])) + np.sum(np.abs(outputs_cpu[2] - targets_cpu[2])) , lossPer_v.item() ) )
@@ -177,7 +195,7 @@ for si in range(25):
         lossL1_dn = criterionL1(outputs_dn, targets_dn)
         L1val_dn_accum += lossL1_dn.item()
 
-########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+        # added: one CSV row per test sample
         with open(metrics_file, mode="a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([
@@ -190,17 +208,20 @@ for si in range(25):
                 lossPer.item() * 100.0,
                 max(0.0, (1.0 - lossPer_p.item()) * 100.0),
                 max(0.0, (1.0 - lossPer_v.item()) * 100.0),
-                max(0.0, (1.0 - lossPer.item()) * 100.0)
+                max(0.0, (1.0 - lossPer.item()) * 100.0),
+                lossPer_vx.item() * 100.0,
+                lossPer_vy.item() * 100.0
             ])
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        # changed: only the first test sample is saved as image, in the run folder
         if i == 0:
             results_dir = os.path.join(metrics_dir, "results")
             os.makedirs(results_dir, exist_ok=True)
             
             img_path = os.path.join(results_dir, "final_test_sample")
             utils.imageOut(img_path, outputs_cpu, targets_cpu, normalize=False, saveMontage=True)
-# --------------------------------------------------------------
-    log(lf, "\n") 
+
+    log(lf, "\n")
     L1val_accum     /= len(testLoader)
     lossPer_p_accum /= len(testLoader)
     lossPer_v_accum /= len(testLoader)
@@ -210,9 +231,15 @@ for si in range(25):
     log(lf, "Loss percentage (p, v, combined): %f %%    %f %%    %f %% " % (lossPer_p_accum*100, lossPer_v_accum*100, lossPer_accum*100 ) )
     log(lf, "L1 error: %f" % (L1val_accum) )
     log(lf, "Denormalized error: %f" % (L1val_dn_accum) )
-    log(lf, "\n") 
 
-########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+    # added: relative errors over the whole test set (sum of |error| / sum of |target|), in %.
+    # Note: they differ from the per-sample averages above, which weight every sample equally
+    err_p, err_vx, err_vy, err_agg = 100.0 * abs_diff_sum / np.maximum(abs_target_sum, eps)
+    err_v = 100.0 * (abs_diff_sum[1] + abs_diff_sum[2]) / max(abs_target_sum[1] + abs_target_sum[2], eps)
+    log(lf, "Relative error over the test set (p, vx, vy, combined): %f %%    %f %%    %f %%    %f %% " % (err_p, err_vx, err_vy, err_agg) )
+    log(lf, "\n")
+
+    # added: summary row ("ALL") with the test-set errors, read by run_all_seeds.py, and values for the bar plot
     with open(metrics_file, mode="a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
@@ -220,19 +247,21 @@ for si in range(25):
             "ALL",
             L1val_accum,
             L1val_dn_accum,
-            lossPer_p_accum * 100.0,
-            lossPer_v_accum * 100.0,
-            lossPer_accum * 100.0,
-            max(0.0, (1.0 - lossPer_p_accum) * 100.0),
-            max(0.0, (1.0 - lossPer_v_accum) * 100.0),
-            max(0.0, (1.0 - lossPer_accum) * 100.0)
+            err_p,
+            err_v,
+            err_agg,
+            max(0.0, 100.0 - err_p),
+            max(0.0, 100.0 - err_v),
+            max(0.0, 100.0 - err_agg),
+            err_vx,
+            err_vy
         ])
 
     plot_model_names.append(os.path.basename(modelFn))
-    plot_err_p.append(lossPer_p_accum * 100.0)
-    plot_err_v.append(lossPer_v_accum * 100.0)
-    plot_err_agg.append(lossPer_accum * 100.0)
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    plot_err_p.append(err_p)
+    plot_err_v.append(err_v)
+    plot_err_agg.append(err_agg)
+
     avgLoss += lossPer_accum
     losses.append(lossPer_accum)
 
@@ -241,7 +270,7 @@ if len(losses)>1:
     lossStdErr = np.std(losses) / math.sqrt(len(losses))
     log(lf, "Averaged relative error and std dev across models:   %f , %f " % (avgLoss,lossStdErr) )
 
-########################################################################################################            val_abs_diff_sum += torch.sum(torch.abs(outputs - targets)).item()
+# added: bar plot of the test relative error per field
 if len(plot_model_names) > 0:
     x = np.arange(len(plot_model_names))
     width = 0.25
@@ -262,7 +291,6 @@ if len(plot_model_names) > 0:
     plt.savefig(plot_path, dpi=300)
     plt.close()
 
-    print(f"\nTest completato.")
-    print(f"Metriche salvate in: {metrics_file}")
-    print(f"Grafico salvato in:  {plot_path}")
-#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    print(f"\nTest completed.")
+    print(f"Metrics saved in: {metrics_file}")
+    print(f"Plot saved in:  {plot_path}")

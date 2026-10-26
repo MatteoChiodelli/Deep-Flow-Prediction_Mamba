@@ -1,6 +1,10 @@
 ################
 #
-# Automatic Hyperparameter Tuning Runner for DfpNet (Mamba blocks)
+# Automatic Hyperparameter Tuning Runner for DfpNet (Mamba blocks) - our script
+#
+# For every row of EXPERIMENTS it trains MODEL_TYPE once (runTrain.py as subprocess, single seed) with the
+# given V-Mamba hyperparameters, then adds a row to a summary CSV sorted by validation error:
+#   metrics/Tuning_<TUNING_LAYER>/summary_<MODEL_TYPE>_<TUNING_LAYER>.csv
 #
 ################
 
@@ -15,13 +19,16 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 MODEL_TYPE   = "HalfMamba_Augmented"      # "HalfMamba" (9 params: 3x3) or "HalfMamba_Augmented" (12 params: 3x4)
-TUNING_LAYER = "all_layers"        # "vmamba1", "vmamba2", "vmamba3", or "vmamba_decoder"
+TUNING_LAYER = "all_layers"        # "vmamba1", "vmamba2", "vmamba3", "vmamba_decoder" or "all_layers" (only used for naming)
 SEED         = 42
-EXPO         = 5              
+EXPO         = 5
 
-BASELINE_VAL_ERR_PCT = 1.9530 # Average of last 20 epoches of baseline
+# Average of last 20 epochs of baseline, reduced dataset (where we did the tuning): only used for the
+# improvement column, update it if the tuning is run on the full dataset
+BASELINE_VAL_ERR_PCT = 1.9530
 
-EXPERIMENTS = [ 
+# one row per run: (ssm_d_state, ssm_ratio, mlp_ratio) for vmamba1 | vmamba2 | vmamba3 | vmamba_decoder
+EXPERIMENTS = [
 
 
     [16, 2, 2,   16, 2, 2,   16, 2, 2,   32, 2, 4],
@@ -38,6 +45,7 @@ EXPERIMENTS = [
 ]
 
 
+# position of each layer's first value in an EXPERIMENTS row
 LAYER_INDEX_MAP = {
     "vmamba1": 0,
     "vmamba2": 3,
@@ -51,7 +59,7 @@ def fmt_num(x):
 
 def params_to_mamba_cfg(params):
     if len(params) not in (9, 12):
-        raise ValueError(f"Ogni esperimento deve avere 9 o 12 parametri, trovati {len(params)}: {params}")
+        raise ValueError(f"Each experiment needs 9 or 12 parameters, found {len(params)}: {params}")
     cfg = {
         "vmamba1": {"ssm_d_state": params[0], "ssm_ratio": params[1], "mlp_ratio": params[2]},
         "vmamba2": {"ssm_d_state": params[3], "ssm_ratio": params[4], "mlp_ratio": params[5]},
@@ -61,6 +69,7 @@ def params_to_mamba_cfg(params):
         cfg["vmamba_decoder"] = {"ssm_d_state": params[9], "ssm_ratio": params[10], "mlp_ratio": params[11]}
     return cfg
 
+# builds the model once just to count its trainable parameters
 def count_params_millions(model_type, expo, mamba_cfg):
     net = build_model(model_type, channelExponent=expo, dropout=0.0, mamba_cfg=mamba_cfg)
     total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
@@ -77,16 +86,19 @@ def get_row_name(model_type, tuning_layer, params, seen_counts):
     else:
         idx = LAYER_INDEX_MAP[tuning_layer]
         if idx >= len(params):
-            raise ValueError(f"TUNING_LAYER='{tuning_layer}' richiede 12 parametri, ma ne hai passati {len(params)}.")
+            raise ValueError(f"TUNING_LAYER='{tuning_layer}' needs 12 parameters, got {len(params)}.")
         d_s, s_r, m_r = fmt_num(params[idx]), fmt_num(params[idx+1]), fmt_num(params[idx+2])
         base_name = f"{model_type}_{d_s}_{s_r}_{m_r}"
     
-    # Se provi due run che hanno gli stessi 3 valori sul layer target ma cambiano altro, evita sovrascritture
+    # two runs with the same values on the target layer (but different elsewhere) get a _runN suffix,
+    # so they do not overwrite each other
     seen_counts[base_name] = seen_counts.get(base_name, 0) + 1
     if seen_counts[base_name] > 1:
         return f"{base_name}_run{seen_counts[base_name]}"
     return base_name
 
+# Summary of one run: errors averaged over the last 20 epochs (less noisy than the last epoch alone),
+# best validation error, time/VRAM averaged excluding the first epoch (warm-up), improvement vs baseline
 def summarize_run_csv(csv_path, row_name, config_str, params_str, baseline_err_pct):
     df = pd.read_csv(csv_path)
     last20 = df.tail(20)
@@ -158,7 +170,7 @@ def main():
     seen_counts = {}
 
     print("=" * 80)
-    print(f"ACITVATING AUTO TRAIN | Modello: {MODEL_TYPE} | Layer Target: {TUNING_LAYER} | Seed: {SEED}")
+    print(f"STARTING AUTO TRAIN | Model: {MODEL_TYPE} | Layer Target: {TUNING_LAYER} | Seed: {SEED}")
     print(f"Output Folder: {tuning_base_dir}")
     print(f"Total number of combinations: {len(EXPERIMENTS)}")
     print("=" * 80)
@@ -170,6 +182,7 @@ def main():
         print(f"\n>>> [{idx}/{len(EXPERIMENTS)}] Starting Run: {row_name} ({params_str})")
         print(f"    Configuration Done: {params}")
 
+        # runTrain.py <model> <run name> <seed> <tuning folder> <hyperparameters...>, channel exponent via env var
         cmd = [
             sys.executable, "runTrain.py",
             MODEL_TYPE,
@@ -182,7 +195,7 @@ def main():
         
         run_metrics_csv = os.path.join(tuning_base_dir, row_name, "metrics_train.csv")
         if result.returncode != 0 or not os.path.exists(run_metrics_csv):
-            print(f"[ERROR] Run {row_name} failerd o did not generate {run_metrics_csv}. Going next...")
+            print(f"[ERROR] Run {row_name} failed or did not generate {run_metrics_csv}. Going next...")
             continue
 
         row_summary = summarize_run_csv(run_metrics_csv, row_name, config_str, params_str, BASELINE_VAL_ERR_PCT)
@@ -191,10 +204,10 @@ def main():
         summary_rows.append(row_summary)
         write_summary(summary_csv_path, summary_rows)
 
-        print(f"<<< [{idx}/{len(EXPERIMENTS)}] Completated {row_name}: Val(20)={row_summary['val_error_last20_pct']} | Peak={row_summary['peak_val_error_pct']} | Impr={row_summary['improvement_vs_baseline_pct']}")
+        print(f"<<< [{idx}/{len(EXPERIMENTS)}] Completed {row_name}: Val(20)={row_summary['val_error_last20_pct']} | Peak={row_summary['peak_val_error_pct']} | Impr={row_summary['improvement_vs_baseline_pct']}")
 
     print("\n" + "=" * 80)
-    print(f"TUNING COMPLETE! Riepilogo salvato in: {summary_csv_path}")
+    print(f"TUNING COMPLETE! Summary saved in: {summary_csv_path}")
     print("=" * 80)
     if summary_rows:
         df_out = pd.DataFrame(summary_rows)[FIELDNAMES]

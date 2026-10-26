@@ -2,7 +2,11 @@
 #
 # Deep Flow Prediction - N. Thuerey, K. Weissenov, H. Mehrotra, N. Mainali, L. Prantl, X. Hu (TUM)
 #
-# Main training script (Modified with Metrics Logging & Plotting)
+# Main training script, CPU version
+#
+# Modified by our group w.r.t. the original DFP repo, same changes as runTrain.py (model chosen by name,
+# fixed seed, metrics CSV + loss plot) but without AMP / VRAM logging. Used for quick local tests
+# without a GPU (run_all_seeds.py with GPU = 0).
 #
 ################
 
@@ -38,6 +42,7 @@ prop = None
 # save txt files with per epoch loss?
 saveL1 = False
 
+# usage: python runTrainCpu.py <model_type> <run_name> <seed>   (model_type: see MODEL_CONFIGS in DfpNet.py)
 model_type = sys.argv[1] if len(sys.argv) > 1 else "baseline"
 run_name   = sys.argv[2] if len(sys.argv) > 2 else "run"
 seed_arg   = int(sys.argv[3]) if len(sys.argv) > 3 else None
@@ -83,6 +88,7 @@ epochs = int(iterations / len(trainLoader) + 0.5)
 if epochs < 1:
     epochs = 1
 
+# originally TurbNetG(...): now the network is built from its name (see DfpNet.py)
 netG = build_model(model_type, channelExponent=expo, dropout=dropout)
 
 print(netG)
@@ -104,9 +110,8 @@ inputs  = Variable(torch.FloatTensor(batch_size, 3, 128, 128))
 trainable_params = sum(p.numel() for p in netG.parameters() if p.requires_grad)
 print(f"Initialized {model_type} with {trainable_params:,} trainable params")
 
-################################################################################
-
-is_small = True  #HERE
+# added: output folder and per-epoch metrics CSV (same columns as runTrain.py, without VRAM)
+is_small = False  #HERE
 suffix_str = "_small" if is_small else ""
 
 metrics_dir = os.path.join("metrics", f"{model_type}_{run_name}_s{seed}{suffix_str}")
@@ -114,7 +119,6 @@ os.makedirs(metrics_dir, exist_ok=True)
 
 metrics_file = os.path.join(metrics_dir, "metrics_train.csv")
 plot_path = os.path.join(metrics_dir, "loss_curve_train.png")
-################################################################################
 
 with open(metrics_file, mode="w", newline="") as f:
     writer = csv.writer(f)
@@ -226,7 +230,6 @@ for epoch in range(epochs):
                 
                 img_path = os.path.join(results_dir, "final_train_sample")
                 utils.imageOut(img_path, outputs_denormalized, targets_denormalized, saveTargets=True)
-# ------------------------------------------------------------
     epoch_time_s = time.perf_counter() - epoch_start
 
     epoch_val_loss = L1val_accum / len(valiLoader)
